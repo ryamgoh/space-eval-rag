@@ -31,23 +31,33 @@ class LLMEvaluator:
     async def run_async(self) -> Dict[str, Any]:
         evaluation = self.config["evaluation"]
         executor = ParallelExecutor(evaluation["max_concurrent"])
+        output_dir = Path(evaluation["output_dir"])
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        run_dir = output_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
         coroutines = [
-            self._evaluate_single(model, task)
+            self._evaluate_single(model, task, run_dir)
             for model in self.models
             for task in self.tasks
         ]
         results = await executor.run(coroutines)
         aggregated = ResultAggregator.aggregate_results(results)
-        output_dir = Path(evaluation["output_dir"])
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        aggregated["run_id"] = run_id
         ResultAggregator.save_results(
             aggregated,
-            str(output_dir / f"summary_{timestamp}.json"),
+            str(run_dir / "summary.json"),
+            format="json",
+        )
+        ResultAggregator.save_results(
+            aggregated,
+            str(output_dir / f"summary_{run_id}.json"),
             format="json",
         )
         return aggregated
 
-    async def _evaluate_single(self, model: BaseModel, task: Dict[str, Any]) -> Dict[str, Any]:
+    async def _evaluate_single(
+        self, model: BaseModel, task: Dict[str, Any], run_dir: Path
+    ) -> Dict[str, Any]:
         evaluation = self.config["evaluation"]
         dataset = TaskProcessor.load_dataset(task["dataset"], split=task.get("split"))
         sample_size = task.get("sample_size", evaluation.get("sample_size"))
@@ -58,20 +68,26 @@ class LLMEvaluator:
         references = TaskProcessor.extract_references(dataset, task)
 
         generation_kwargs = task.get("generation_kwargs", {})
-        predictions = await model.batch_generate(
+        raw_predictions = await model.batch_generate(
             prompts,
             batch_size=evaluation["batch_size"],
             **generation_kwargs,
         )
 
-        predictions = TaskProcessor.postprocess_predictions(predictions, task)
+        postprocessed_predictions = TaskProcessor.postprocess_predictions(raw_predictions, task)
         label_map = task.get("label_map")
+        metric_predictions = postprocessed_predictions
+        metric_references = references
+        normalized_predictions = None
+        normalized_references = None
         if label_map:
-            predictions, references = TaskProcessor.normalize_classification(
-                predictions, references, label_map
+            normalized_predictions, normalized_references = TaskProcessor.normalize_classification(
+                postprocessed_predictions, references, label_map
             )
+            metric_predictions = normalized_predictions
+            metric_references = normalized_references
 
-        metrics = TaskProcessor.compute_metrics(predictions, references, task["metrics"])
+        metrics = TaskProcessor.compute_metrics(metric_predictions, metric_references, task["metrics"])
         prediction_sample_size = evaluation.get("prediction_sample_size", 5)
 
         result = {
@@ -79,14 +95,38 @@ class LLMEvaluator:
             "task": task["name"],
             "metrics": metrics,
             "num_examples": len(prompts),
-            "prediction_samples": predictions[:prediction_sample_size],
+            "prediction_samples": metric_predictions[:prediction_sample_size],
         }
 
-        output_dir = Path(evaluation["output_dir"])
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if evaluation.get("save_detailed"):
+            max_examples = evaluation.get("max_detailed_examples")
+            total = len(prompts)
+            limit = total if max_examples is None else min(total, max_examples)
+            detailed_examples = []
+            for idx in range(limit):
+                detailed_examples.append(
+                    {
+                        "index": idx,
+                        "prompt": prompts[idx],
+                        "prediction_raw": raw_predictions[idx],
+                        "prediction_postprocessed": postprocessed_predictions[idx],
+                        "prediction_normalized": normalized_predictions[idx]
+                        if normalized_predictions
+                        else None,
+                        "reference": references[idx],
+                        "reference_normalized": normalized_references[idx]
+                        if normalized_references
+                        else None,
+                    }
+                )
+            result["examples"] = detailed_examples
+
+        model_dir_name = model.name.replace("/", "_").replace(" ", "_")
+        model_dir = run_dir / model_dir_name
+        model_dir.mkdir(parents=True, exist_ok=True)
         ResultAggregator.save_results(
             {"runs": [result]},
-            str(output_dir / f"{task['name']}__{model.name}.json"),
+            str(model_dir / f"{task['name']}.json"),
             format="json",
         )
         return result
