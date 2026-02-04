@@ -134,10 +134,10 @@ class LLMEvaluator:
                         "index": idx,
                         "prompt": prompts[idx],
                         "prediction_raw": raw_predictions[idx],
-                        "prediction_postprocessed": postprocessed_predictions[idx],
-                        "prediction_normalized": metric_predictions[idx],
-                        "reference": references[idx],
-                        "reference_normalized": metric_references[idx],
+                        "prediction_parsed": postprocessed_predictions[idx],
+                        "prediction": metric_predictions[idx],
+                        "actual_raw": references[idx],
+                        "actual": metric_references[idx],
                         "extra": extra,
                     }
                 )
