@@ -41,10 +41,10 @@ class ConfigManager:
         for task in config["tasks"]:
             if "name" not in task or "dataset" not in task:
                 raise ConfigError("Each task requires 'name' and 'dataset'.")
-            if "prompt_template" not in task:
-                raise ConfigError("Each task requires a prompt_template.")
-            if "input_mappings" not in task:
-                raise ConfigError("Each task requires input_mappings.")
+            if "prompt_template" not in task and "prompt_templates" not in task:
+                raise ConfigError("Each task requires prompt_template or prompt_templates.")
+            if "input_mappings" not in task and "fields" not in task:
+                raise ConfigError("Each task requires input_mappings or fields.")
             if "metrics" in task and not isinstance(task["metrics"], list):
                 raise ConfigError("Task metrics must be a list.")
 

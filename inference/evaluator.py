@@ -79,12 +79,6 @@ class LLMEvaluator:
         # Select adapter based on explicit override or task shape.
         if task.get("task_adapter"):
             adapter_name = task["task_adapter"]
-        elif task.get("choices"):
-            adapter_name = "choice"
-        elif task.get("scale"):
-            adapter_name = "likert"
-        elif task.get("label_map"):
-            adapter_name = "classification"
         else:
             adapter_name = "generic"
         task_adapter = task_adapters.create(adapter_name)

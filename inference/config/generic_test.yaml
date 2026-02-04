@@ -1,0 +1,30 @@
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    local_dir: "./models/flan-t5-small"
+    model_class: "seq2seq"
+    generation_kwargs:
+      max_new_tokens: 32
+      do_sample: false
+
+datasets_dir: "./datasets"
+
+tasks:
+  - name: "xsum-mini"
+    dataset: "xsum"
+    split: "validation"
+    prompt_template: "Summarize:\n{document}"
+    input_mappings:
+      document: "document"
+    reference_field: "summary"
+    metrics: ["rouge"]
+    sample_size: 8
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 1
+  output_dir: "runs"
+  prediction_sample_size: 3
+  save_detailed: true
+  max_detailed_examples: 5

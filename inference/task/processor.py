@@ -67,7 +67,7 @@ class TaskProcessor:
         """Render prompt templates using dataset rows."""
         prompts: List[str] = []
         for row in dataset:
-            values = {key: row[field] for key, field in mappings.items()}
+            values = {key: TaskProcessor.resolve_field(row, field) for key, field in mappings.items()}
             prompts.append(template.format_map(values))
         return prompts
 
@@ -76,11 +76,36 @@ class TaskProcessor:
         """Extract reference labels/targets from dataset rows."""
         ref_field = task_config.get("reference_field")
         if isinstance(ref_field, str):
-            return [row[ref_field] for row in dataset]
+            return [TaskProcessor.resolve_field(row, ref_field) for row in dataset]
         ref_fields = task_config.get("reference_fields")
         if isinstance(ref_fields, Sequence) and not isinstance(ref_fields, (str, bytes)):
-            return [{field: row[field] for field in ref_fields} for row in dataset]
+            return [
+                {field: TaskProcessor.resolve_field(row, field) for field in ref_fields}
+                for row in dataset
+            ]
         raise ValueError("Task must specify reference_field or reference_fields.")
+
+    @staticmethod
+    def resolve_field(row: Mapping[str, Any], path: str) -> Any:
+        """Resolve dot-path fields (with optional list indices) from a row."""
+        current: Any = row
+        for part in path.split("."):
+            if isinstance(current, Mapping):
+                if part not in current:
+                    raise KeyError(f"Missing field '{part}' in path '{path}'.")
+                current = current[part]
+                continue
+            if isinstance(current, list):
+                try:
+                    index = int(part)
+                except ValueError as exc:
+                    raise KeyError(f"Expected list index in path '{path}', got '{part}'.") from exc
+                if index >= len(current) or index < 0:
+                    raise IndexError(f"Index {index} out of range for path '{path}'.")
+                current = current[index]
+                continue
+            raise KeyError(f"Cannot resolve '{part}' in path '{path}'.")
+        return current
 
     @staticmethod
     def postprocess_predictions(predictions: List[str], task_config: Mapping[str, Any]) -> List[str]:

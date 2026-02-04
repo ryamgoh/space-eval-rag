@@ -30,7 +30,6 @@ tasks:
       do_sample: false
 
   - name: "agnews-mini"
-    task_adapter: "classification"
     dataset: "ag_news"
     split: "test"
     prompt_template: |
