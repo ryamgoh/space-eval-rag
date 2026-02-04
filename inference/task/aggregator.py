@@ -8,8 +8,10 @@ from typing import Any, Dict, Iterable, List
 
 
 class ResultAggregator:
+    """Aggregate, summarize, and persist evaluation results."""
     @staticmethod
     def aggregate_results(results: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+        """Combine per-run results with a summary of numeric metrics."""
         results_list = list(results)
         return {
             "runs": results_list,
@@ -18,6 +20,7 @@ class ResultAggregator:
 
     @staticmethod
     def compute_statistics(results: Iterable[Dict[str, Any]]) -> Dict[str, float]:
+        """Compute mean of numeric metrics across runs."""
         metrics: Dict[str, List[float]] = {}
         for result in results:
             for name, value in result.get("metrics", {}).items():
@@ -27,6 +30,7 @@ class ResultAggregator:
 
     @staticmethod
     def save_results(results: Dict[str, Any], output_path: str, format: str = "json") -> None:
+        """Persist results to disk in JSON, JSONL, or CSV format."""
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         fmt = format.lower()
@@ -53,6 +57,7 @@ class ResultAggregator:
 
     @staticmethod
     def generate_report(results: Dict[str, Any]) -> str:
+        """Generate a simple human-readable summary report."""
         summary = results.get("summary", {})
         lines = ["Summary metrics:"]
         for name, value in sorted(summary.items()):

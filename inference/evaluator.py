@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from inference.adapters import metric_adapters, task_adapters
 from inference.config.manager import ConfigManager
 from inference.model.base_model import BaseModel
 from inference.model.model import ModelFactory
@@ -14,21 +15,27 @@ from inference.util.parallel_executor import ParallelExecutor
 
 
 class LLMEvaluator:
+    """Run multi-model, multi-task evaluations using async execution."""
     def __init__(self, config_path: str):
+        """Load config and initialize model/task lists."""
         self.config = ConfigManager.load_yaml(config_path)
         self.models = self._load_models()
         self.tasks = self._load_tasks()
 
     def _load_models(self) -> List[BaseModel]:
+        """Instantiate model adapters from config."""
         return [ModelFactory.get_model(model_cfg) for model_cfg in self.config["models"]]
 
     def _load_tasks(self) -> List[Dict[str, Any]]:
+        """Return task configs as a list."""
         return list(self.config["tasks"])
 
     def run(self) -> Dict[str, Any]:
+        """Run the evaluation synchronously by wrapping the async runner."""
         return asyncio.run(self.run_async())
 
     async def run_async(self) -> Dict[str, Any]:
+        """Execute evaluation jobs concurrently and write summary outputs."""
         evaluation = self.config["evaluation"]
         executor = ParallelExecutor(evaluation["max_concurrent"])
         output_dir = Path(evaluation["output_dir"])
@@ -48,51 +55,72 @@ class LLMEvaluator:
             str(run_dir / "summary.json"),
             format="json",
         )
-        ResultAggregator.save_results(
-            aggregated,
-            str(output_dir / f"summary_{run_id}.json"),
-            format="json",
-        )
+        # ResultAggregator.save_results(
+        #     aggregated,
+        #     str(output_dir / f"summary_{run_id}.json"),
+        #     format="json",
+        # )
         return aggregated
 
     async def _evaluate_single(
         self, model: BaseModel, task: Dict[str, Any], run_dir: Path
     ) -> Dict[str, Any]:
+        """Evaluate a single model-task pair and return structured results."""
         evaluation = self.config["evaluation"]
-        dataset = TaskProcessor.load_dataset(task["dataset"], split=task.get("split"))
+        dataset = TaskProcessor.load_dataset(
+            task["dataset"],
+            split=task.get("split"),
+            cache_dir=self.config.get("datasets_dir"),
+        )
         sample_size = task.get("sample_size", evaluation.get("sample_size"))
         if sample_size:
             dataset = dataset.select(range(min(sample_size, len(dataset))))
 
-        prompts = TaskProcessor.apply_template(dataset, task["prompt_template"], task["input_mappings"])
-        references = TaskProcessor.extract_references(dataset, task)
+        # Select adapter based on explicit override or task shape.
+        if task.get("task_adapter"):
+            adapter_name = task["task_adapter"]
+        elif task.get("choices"):
+            adapter_name = "choice"
+        elif task.get("scale"):
+            adapter_name = "likert"
+        elif task.get("label_map"):
+            adapter_name = "classification"
+        else:
+            adapter_name = "generic"
+        task_adapter = task_adapters.create(adapter_name)
+
+        prompts = task_adapter.build_prompts(dataset, task)
+        references = task_adapter.extract_references(dataset, task)
 
         generation_kwargs = task.get("generation_kwargs", {})
-        raw_predictions = await model.batch_generate(
+        raw_predictions, extras = await task_adapter.generate_predictions(
+            model,
             prompts,
+            task,
             batch_size=evaluation["batch_size"],
             **generation_kwargs,
         )
 
-        postprocessed_predictions = TaskProcessor.postprocess_predictions(raw_predictions, task)
-        label_map = task.get("label_map")
-        metric_predictions = postprocessed_predictions
-        metric_references = references
-        normalized_predictions = None
-        normalized_references = None
-        if label_map:
-            normalized_predictions, normalized_references = TaskProcessor.normalize_classification(
-                postprocessed_predictions, references, label_map
-            )
-            metric_predictions = normalized_predictions
-            metric_references = normalized_references
+        postprocessed_predictions = task_adapter.postprocess_predictions(raw_predictions, task)
+        metric_predictions, metric_references = task_adapter.normalize_for_metrics(
+            postprocessed_predictions, references, task
+        )
 
-        metrics = TaskProcessor.compute_metrics(metric_predictions, metric_references, task["metrics"])
+        metrics = {}
+        for metric_cfg in task.get("metrics", []):
+            adapter = "hf"
+            if isinstance(metric_cfg, dict):
+                adapter = metric_cfg.get("adapter", "hf")
+            metric_adapter = metric_adapters.create(adapter)
+            metrics.update(
+                metric_adapter.compute(metric_predictions, metric_references, metric_cfg)
+            )
         prediction_sample_size = evaluation.get("prediction_sample_size", 5)
 
         result = {
             "model": model.name,
             "task": task["name"],
+            "task_adapter": adapter_name,
             "metrics": metrics,
             "num_examples": len(prompts),
             "prediction_samples": metric_predictions[:prediction_sample_size],
@@ -102,21 +130,21 @@ class LLMEvaluator:
             max_examples = evaluation.get("max_detailed_examples")
             total = len(prompts)
             limit = total if max_examples is None else min(total, max_examples)
+            if extras is None:
+                extras = task_adapter.collect_extras(task, limit) or []
             detailed_examples = []
             for idx in range(limit):
+                extra = extras[idx] if extras else {}
                 detailed_examples.append(
                     {
                         "index": idx,
                         "prompt": prompts[idx],
                         "prediction_raw": raw_predictions[idx],
                         "prediction_postprocessed": postprocessed_predictions[idx],
-                        "prediction_normalized": normalized_predictions[idx]
-                        if normalized_predictions
-                        else None,
+                        "prediction_normalized": metric_predictions[idx],
                         "reference": references[idx],
-                        "reference_normalized": normalized_references[idx]
-                        if normalized_references
-                        else None,
+                        "reference_normalized": metric_references[idx],
+                        "extra": extra,
                     }
                 )
             result["examples"] = detailed_examples

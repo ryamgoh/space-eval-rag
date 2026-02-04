@@ -10,11 +10,13 @@ from inference.model.base_model import BaseModel
 
 
 def _resolve_model_path(model_path: str, local_dir: Optional[str]) -> tuple[str, Optional[str]]:
+    """Decide whether to load from local dir or download into it."""
     if not local_dir:
         return model_path, None
 
     os.makedirs(local_dir, exist_ok=True)
     marker_files = ("config.json", "model.safetensors", "pytorch_model.bin")
+    # Treat local_dir as a model path only if it already looks populated.
     has_model_files = any(os.path.exists(os.path.join(local_dir, name)) for name in marker_files)
     if has_model_files:
         return local_dir, local_dir
@@ -22,7 +24,9 @@ def _resolve_model_path(model_path: str, local_dir: Optional[str]) -> tuple[str,
 
 
 class HuggingFaceModel(BaseModel):
+    """Adapter for Hugging Face Transformers models."""
     def __init__(self, config: Dict[str, Any]):
+        """Initialize tokenizer/model and cache configuration."""
         name = config["name"]
         super().__init__(name=name, model_type="huggingface", max_batch_size=config.get("max_batch_size"))
         model_path = config["model_path"]
@@ -42,6 +46,7 @@ class HuggingFaceModel(BaseModel):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
+        self.model_class = model_class
         model_cls = AutoModelForSeq2SeqLM if model_class == "seq2seq" else AutoModelForCausalLM
         self.model = model_cls.from_pretrained(
             resolved_path, cache_dir=cache_dir, trust_remote_code=trust_remote, **model_kwargs
@@ -50,9 +55,11 @@ class HuggingFaceModel(BaseModel):
         self.generation_kwargs = config.get("generation_kwargs", {})
 
     async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
+        """Generate responses for a batch of prompts."""
         gen_kwargs = {**self.generation_kwargs, **kwargs}
 
         def _run() -> list[str]:
+            # Run generation in a worker thread to avoid blocking the event loop.
             inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
             outputs = self.model.generate(**inputs, **gen_kwargs)
             return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -61,7 +68,9 @@ class HuggingFaceModel(BaseModel):
 
 
 class VLLMModel(BaseModel):
+    """Adapter for vLLM-backed models."""
     def __init__(self, config: Dict[str, Any]):
+        """Initialize vLLM engine and sampling parameters."""
         name = config["name"]
         super().__init__(name=name, model_type="vllm", max_batch_size=config.get("max_batch_size"))
         try:
@@ -76,6 +85,7 @@ class VLLMModel(BaseModel):
         self.llm = LLM(model=resolved_path, download_dir=download_dir)
 
     async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
+        """Generate responses for a batch of prompts via vLLM."""
         def _run() -> list[str]:
             outputs = self.llm.generate(prompts, self.sampling_params)
             return [out.outputs[0].text if out.outputs else "" for out in outputs]
@@ -84,18 +94,23 @@ class VLLMModel(BaseModel):
 
 
 class APIModel(BaseModel):
+    """Adapter placeholder for API-backed models."""
     def __init__(self, config: Dict[str, Any]):
+        """Store API configuration without initializing a client."""
         name = config["name"]
         super().__init__(name=name, model_type="api", max_batch_size=config.get("max_batch_size"))
         self.config = config
 
     async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
+        """Generate responses via an external API (not implemented)."""
         raise NotImplementedError("API model adapter is not implemented yet.")
 
 
 class ModelFactory:
+    """Factory for creating model adapters from config."""
     @staticmethod
     def get_model(model_config: Dict[str, Any]) -> BaseModel:
+        """Instantiate the appropriate model adapter based on config type."""
         model_type = model_config["type"].lower()
         if model_type == "huggingface":
             return HuggingFaceModel(model_config)

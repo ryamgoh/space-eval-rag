@@ -1,3 +1,5 @@
+datasets_dir: "./datasets"
+
 models:
   - name: "flan-t5-small"
     type: "huggingface"
@@ -8,37 +10,31 @@ models:
       max_new_tokens: 64
       do_sample: false
 
-
 tasks:
   - name: "qa-sciq-mini"
+    task_adapter: "generic"
     dataset: "sciq"
     split: "validation"
     prompt_template: |
-      Answer the question in 1-4 words.
-      Question: What gas do plants absorb from the atmosphere?
-      Answer: carbon dioxide
-      Question: Who proposed the theory of evolution by natural selection?
-      Answer: Charles Darwin
       Question: {question}
       Answer:
     input_mappings:
       question: "question"
     reference_field: "correct_answer"
-    metrics: ["rouge"]
+    metrics:
+      - name: "rouge"
+        adapter: "hf"
     sample_size: 8
     generation_kwargs:
       max_new_tokens: 8
       do_sample: false
 
   - name: "agnews-mini"
+    task_adapter: "classification"
     dataset: "ag_news"
     split: "test"
     prompt_template: |
       Choose exactly one label: World, Sports, Business, Sci/Tech.
-      Text: The team won the championship after a thrilling final match.
-      Label: Sports
-      Text: The central bank raised interest rates to fight inflation.
-      Label: Business
       Text: {text}
       Label:
     input_mappings:
@@ -47,7 +43,9 @@ tasks:
     label_map: ["World", "Sports", "Business", "Sci/Tech"]
     prediction_postprocess:
       after: "Label:"
-    metrics: ["accuracy"]
+    metrics:
+      - name: "accuracy"
+        adapter: "hf"
     sample_size: 50
     generation_kwargs:
       max_new_tokens: 3

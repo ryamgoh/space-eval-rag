@@ -7,12 +7,15 @@ import yaml
 
 
 class ConfigError(ValueError):
+    """Raised when the configuration file fails validation."""
     pass
 
 
 class ConfigManager:
+    """Loads, validates, and normalizes YAML configuration files."""
     @staticmethod
     def load_yaml(config_path: str) -> Dict[str, Any]:
+        """Read a YAML config file, expand env vars, validate, and apply defaults."""
         with open(config_path, "r", encoding="utf-8") as handle:
             raw = os.path.expandvars(handle.read())
         config = yaml.safe_load(raw) or {}
@@ -21,6 +24,7 @@ class ConfigManager:
 
     @staticmethod
     def validate_config(config: Dict[str, Any]) -> None:
+        """Validate the minimum required structure of the config."""
         if not isinstance(config, dict):
             raise ConfigError("Config must be a mapping.")
         if "models" not in config or not isinstance(config["models"], list):
@@ -41,11 +45,12 @@ class ConfigManager:
                 raise ConfigError("Each task requires a prompt_template.")
             if "input_mappings" not in task:
                 raise ConfigError("Each task requires input_mappings.")
-            if "metrics" not in task:
-                raise ConfigError("Each task requires metrics.")
+            if "metrics" in task and not isinstance(task["metrics"], list):
+                raise ConfigError("Task metrics must be a list.")
 
     @staticmethod
     def merge_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply default values for optional config fields."""
         evaluation = config.setdefault("evaluation", {})
         evaluation.setdefault("batch_size", 8)
         evaluation.setdefault("max_concurrent", 4)
@@ -54,4 +59,8 @@ class ConfigManager:
         evaluation.setdefault("prediction_sample_size", 5)
         evaluation.setdefault("save_detailed", False)
         evaluation.setdefault("max_detailed_examples", 50)
+        config.setdefault("datasets_dir", "datasets")
+        for task in config.get("tasks", []):
+            # Metrics are optional; default to empty for pipeline flexibility.
+            task.setdefault("metrics", [])
         return config

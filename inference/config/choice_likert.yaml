@@ -1,0 +1,51 @@
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    local_dir: "./models/flan-t5-small"
+    model_class: "seq2seq"
+    generation_kwargs:
+      max_new_tokens: 8
+      do_sample: false
+
+datasets_dir: "./datasets"
+
+tasks:
+  - name: "agnews-choice"
+    task_adapter: "choice_logprob"
+    dataset: "ag_news"
+    split: "test"
+    prompt_template: |
+      Choose exactly one label: `World`, `Sports`, `Business`, `Sci/Tech`.
+      Text: {text}
+      Label:
+    input_mappings:
+      text: "text"
+    choices: ["World", "Sports", "Business", "Sci/Tech"]
+    reference_field: "label"
+    label_map: ["World", "Sports", "Business", "Sci/Tech"]
+    metrics:
+      - name: "f1"
+        adapter: "hf"
+        args:
+          average: "macro"
+    sample_size: 300
+
+  # - name: "agnews-likert-mini"
+  #   task_adapter: "likert"
+  #   dataset: "ag_news"
+  #   split: "test"
+  #   prompt_template: "Rate from 1 (not about sports) to 5 (definitely about sports).\nText: {text}\nRating:"
+  #   input_mappings:
+  #     text: "text"
+  #   scale: [1, 2, 3, 4, 5]
+  #   reference_field: "label"
+  #   sample_size: 100
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 2
+  output_dir: "runs"
+  prediction_sample_size: 5
+  save_detailed: true
+  max_detailed_examples: 10

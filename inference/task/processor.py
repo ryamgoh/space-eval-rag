@@ -1,29 +1,39 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence
+import os
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import evaluate
 from datasets import Dataset, load_dataset
 
 
 class MetricRegistry:
+    """Registry for custom metric functions."""
     _registry: Dict[str, Callable[..., Dict[str, float]]] = {}
 
     @classmethod
     def register(cls, name: str, fn: Callable[..., Dict[str, float]]) -> None:
+        """Register a metric function by name."""
         cls._registry[name] = fn
 
     @classmethod
     def get(cls, name: str) -> Callable[..., Dict[str, float]] | None:
+        """Fetch a registered metric function by name."""
         return cls._registry.get(name)
 
 
 class TaskProcessor:
+    """Utilities for dataset loading, templating, and metric computation."""
     @staticmethod
-    def load_dataset(dataset_config: Any, split: str | None = None) -> Dataset:
+    def load_dataset(
+        dataset_config: Any, split: str | None = None, cache_dir: Optional[str] = None
+    ) -> Dataset:
+        """Load a dataset from HF or a custom loader, with optional caching."""
         if isinstance(dataset_config, str):
-            return load_dataset(dataset_config, split=split or "validation")
+            if cache_dir:
+                os.makedirs(cache_dir, exist_ok=True)
+            return load_dataset(dataset_config, split=split or "validation", cache_dir=cache_dir)
 
         if not isinstance(dataset_config, dict):
             raise ValueError("dataset must be a string or dict.")
@@ -33,6 +43,7 @@ class TaskProcessor:
             module_path, func_name = loader_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
             loader = getattr(module, func_name)
+            # Custom loaders may return a Dataset or any iterable of dicts.
             data = loader(dataset_config)
             if isinstance(data, Dataset):
                 return data
@@ -41,10 +52,19 @@ class TaskProcessor:
         dataset_name = dataset_config.get("name") or dataset_config.get("path")
         if not dataset_name:
             raise ValueError("dataset config requires a name or path.")
-        return load_dataset(dataset_name, split=dataset_config.get("split", split or "validation"), **dataset_config.get("kwargs", {}))
+        effective_cache_dir = dataset_config.get("cache_dir", cache_dir)
+        if effective_cache_dir:
+            os.makedirs(effective_cache_dir, exist_ok=True)
+        return load_dataset(
+            dataset_name,
+            split=dataset_config.get("split", split or "validation"),
+            cache_dir=effective_cache_dir,
+            **dataset_config.get("kwargs", {}),
+        )
 
     @staticmethod
     def apply_template(dataset: Dataset, template: str, mappings: Mapping[str, str]) -> List[str]:
+        """Render prompt templates using dataset rows."""
         prompts: List[str] = []
         for row in dataset:
             values = {key: row[field] for key, field in mappings.items()}
@@ -53,6 +73,7 @@ class TaskProcessor:
 
     @staticmethod
     def extract_references(dataset: Dataset, task_config: Mapping[str, Any]) -> List[Any]:
+        """Extract reference labels/targets from dataset rows."""
         ref_field = task_config.get("reference_field")
         if isinstance(ref_field, str):
             return [row[ref_field] for row in dataset]
@@ -63,6 +84,7 @@ class TaskProcessor:
 
     @staticmethod
     def postprocess_predictions(predictions: List[str], task_config: Mapping[str, Any]) -> List[str]:
+        """Apply simple string post-processing rules to predictions."""
         postprocess = task_config.get("prediction_postprocess")
         if not postprocess:
             return predictions
@@ -85,6 +107,7 @@ class TaskProcessor:
         references: List[Any],
         label_map: Mapping[Any, str] | Sequence[str],
     ) -> tuple[List[int], List[int]]:
+        """Normalize classification predictions/refs to numeric label IDs."""
         label_list: List[str]
         label_to_id: Dict[str, int] = {}
         id_to_label: Dict[int, str] = {}
@@ -142,6 +165,7 @@ class TaskProcessor:
         references: Iterable[Any],
         metrics: Iterable[Any],
     ) -> Dict[str, float]:
+        """Compute metrics using registered custom or HF evaluate metrics."""
         results: Dict[str, float] = {}
         for metric_spec in metrics:
             if isinstance(metric_spec, str):
