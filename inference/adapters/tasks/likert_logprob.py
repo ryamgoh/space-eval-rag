@@ -51,6 +51,8 @@ class LikertLogProbTaskAdapter(BaseTaskAdapter):
                 if model.model_class == "seq2seq":
                     inputs = model.tokenizer(prompt, return_tensors="pt")
                     labels = model.tokenizer(choice, return_tensors="pt").input_ids
+                    inputs = {key: value.to(model.model.device) for key, value in inputs.items()}
+                    labels = labels.to(model.model.device)
                     labels_mask = labels != model.tokenizer.pad_token_id
                     token_count = int(labels_mask.sum().item()) or 1
                     labels = labels.masked_fill(~labels_mask, -100)
@@ -63,6 +65,8 @@ class LikertLogProbTaskAdapter(BaseTaskAdapter):
                     choice_ids = model.tokenizer(
                         choice, return_tensors="pt", add_special_tokens=False
                     ).input_ids
+                    prompt_ids = prompt_ids.to(model.model.device)
+                    choice_ids = choice_ids.to(model.model.device)
                     input_ids = torch.cat([prompt_ids, choice_ids], dim=-1)
                     labels = input_ids.clone()
                     labels[:, : prompt_ids.shape[1]] = -100
