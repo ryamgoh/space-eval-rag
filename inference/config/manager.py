@@ -52,4 +52,6 @@ class ConfigManager:
         evaluation.setdefault("output_dir", "runs")
         evaluation.setdefault("sample_size", None)
         evaluation.setdefault("prediction_sample_size", 5)
+        evaluation.setdefault("save_detailed", False)
+        evaluation.setdefault("max_detailed_examples", 50)
         return config
