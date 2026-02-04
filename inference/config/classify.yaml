@@ -34,3 +34,5 @@ evaluation:
   max_concurrent: 1
   output_dir: "runs"
   prediction_sample_size: 50
+  save_detailed: true
+  max_detailed_examples: 50
