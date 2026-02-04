@@ -1,0 +1,42 @@
+models:
+  - name: "gpt-3.5-turbo"
+    type: "api"
+    endpoint: "openai"
+    model_name: "gpt-3.5-turbo"
+    api_key: ${OPENAI_API_KEY}
+
+  - name: "llama-2-7b"
+    type: "vllm"
+    model_path: "meta-llama/Llama-2-7b-hf"
+
+  - name: "flan-t5"
+    type: "huggingface"
+    model_path: "google/flan-t5-base"
+
+tasks:
+  - name: "question_answering"
+    dataset: "squad_v2"
+    split: "validation"
+    prompt_template: "Answer the following question: {context} {question}"
+    input_mappings:
+      context: "context"
+      question: "question"
+    metrics: ["exact_match", "f1"]
+    enable_rag: false
+
+  - name: "custom_task"
+    dataset: 
+      type: "custom"
+      loader: "my_data_loader.load_data"
+    prompt_template: "Translate: {input_text}"
+    input_mappings:
+      input_text: "text"
+    metrics: ["bleu"]
+    enable_rag: true
+    rag_config:
+      knowledge_base: "path/to/knowledge_base.txt"
+      top_k: 3
+
+evaluation:
+  batch_size: 32
+  num_workers: 4
