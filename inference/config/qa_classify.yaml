@@ -1,0 +1,38 @@
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    local_dir: "./models/flan-t5-small"
+    model_class: "seq2seq"
+    generation_kwargs:
+      max_new_tokens: 64
+      do_sample: false
+
+
+tasks:
+  - name: "qa-sciq-mini"
+    dataset: "sciq"
+    split: "validation"
+    prompt_template: "Question: {question}\nAnswer:"
+    input_mappings:
+      question: "question"
+    reference_field: "correct_answer"
+    metrics: ["rouge"]
+    sample_size: 8
+
+  - name: "agnews-mini"
+    dataset: "ag_news"
+    split: "test"
+    prompt_template: "Choose exactly one label: World, Sports, Business, Sci/Tech.\nText: {text}\nLabel:"
+    input_mappings:
+      text: "text"
+    reference_field: "label"
+    label_map: ["World", "Sports", "Business", "Sci/Tech"]
+    metrics: ["accuracy"]
+    sample_size: 50
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 2
+  output_dir: "runs"
+  prediction_sample_size: 10

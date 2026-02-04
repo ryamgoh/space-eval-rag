@@ -1,4 +1,15 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Dict, List
+
+
 class Monitor:
-    def log_metrics(model_name: str, metrics: Dict, timestamp: datetime)
-    def track_resources() -> Dict  # GPU memory, latency, tokens/sec
-    def create_dashboard(metrics_history: List[Dict])
+    def log_metrics(self, model_name: str, metrics: Dict, timestamp: datetime) -> None:
+        _ = (model_name, metrics, timestamp)
+
+    def track_resources(self) -> Dict:
+        return {}
+
+    def create_dashboard(self, metrics_history: List[Dict]) -> None:
+        _ = metrics_history

@@ -1,0 +1,62 @@
+models:
+  - name: "tiny-gpt2"
+    type: "huggingface"
+    model_path: "sshleifer/tiny-gpt2"
+    local_dir: "./models/sshleifer-tiny-gpt2"
+    model_class: "causal"
+    generation_kwargs:
+      max_new_tokens: 40
+  - name: "distilgpt2"
+    type: "huggingface"
+    model_path: "distilgpt2"
+    local_dir: "./models/distilgpt2"
+    model_class: "causal"
+    generation_kwargs:
+      max_new_tokens: 64
+      do_sample: true
+      temperature: 0.8
+      top_p: 0.95
+      repetition_penalty: 1.1
+      no_repeat_ngram_size: 3
+  - name: "gpt2"
+    type: "huggingface"
+    model_path: "gpt2"
+    local_dir: "./models/gpt2"
+    model_class: "causal"
+    generation_kwargs:
+      max_new_tokens: 64
+      do_sample: true
+      temperature: 0.8
+      top_p: 0.95
+      repetition_penalty: 1.1
+      no_repeat_ngram_size: 3
+
+tasks:
+  - name: "xsum-mini"
+    dataset: "xsum"
+    split: "validation"
+    prompt_template: "Summarize the following document:\n{document}"
+    input_mappings:
+      document: "document"
+    reference_field: "summary"
+    metrics: ["rouge"]
+    sample_size: 8
+
+  - name: "wikitext-mini"
+    dataset:
+      path: "wikitext"
+      kwargs:
+        name: "wikitext-2-raw-v1"
+    split: "validation"
+    prompt_template: "Continue the text:\n{text}"
+    input_mappings:
+      text: "text"
+    reference_field: "text"
+    metrics: []
+    sample_size: 8
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 2
+  output_dir: "runs"
+  prediction_sample_size: 3
