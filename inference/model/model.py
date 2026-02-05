@@ -84,7 +84,9 @@ class HuggingFaceModel(BaseModel):
             with torch.inference_mode():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
             sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
-            full_text = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
+            # Raw keeps special tokens; clean is used for completion outputs.
+            raw_full = self.tokenizer.batch_decode(sequences, skip_special_tokens=False)
+            clean_full = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
             if self.model_class == "causal":
                 # Causal LM outputs include the prompt; keep full text and decode completion separately.
                 prompt_len = inputs["input_ids"].shape[1]
@@ -92,10 +94,18 @@ class HuggingFaceModel(BaseModel):
                 completion_text = self.tokenizer.batch_decode(
                     completion_seqs, skip_special_tokens=True
                 )
-                return completion_text, full_text
-            return full_text, full_text
+                return completion_text, raw_full
+            return clean_full, raw_full
 
         return await asyncio.to_thread(_run, list(prompts))
+
+    def get_special_tokens(self) -> Dict[str, Any] | None:
+        """Return tokenizer special token metadata."""
+        return {
+            "special_tokens_map": dict(self.tokenizer.special_tokens_map),
+            "all_special_tokens": list(self.tokenizer.all_special_tokens),
+            "all_special_ids": list(self.tokenizer.all_special_ids),
+        }
 
 
 class VLLMModel(BaseModel):

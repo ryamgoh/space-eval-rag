@@ -110,21 +110,56 @@ class TaskProcessor:
     @staticmethod
     def postprocess_predictions(predictions: List[str], task_config: Mapping[str, Any]) -> List[str]:
         """Apply simple string post-processing rules to predictions."""
-        postprocess = task_config.get("prediction_postprocess")
-        if not postprocess:
-            return predictions
+        postprocess = task_config.get("prediction_postprocess") or {}
+        thinking_cfg = task_config.get("thinking_delimiters") or {}
+        strip_thinking = bool(thinking_cfg.get("strip_from_prediction"))
 
-        after = postprocess.get("after")
-        before = postprocess.get("before")
         processed: List[str] = []
         for pred in predictions:
             text = str(pred)
+            if strip_thinking:
+                # Remove thinking segment before other postprocessing steps.
+                _, text = TaskProcessor.apply_thinking_delimiters(text, thinking_cfg)
+            after = postprocess.get("after")
+            before = postprocess.get("before")
             if after and after in text:
                 text = text.split(after)[-1]
             if before and before in text:
                 text = text.split(before)[0]
             processed.append(text.strip())
         return processed
+
+    @staticmethod
+    def apply_thinking_delimiters(
+        text: str, delimiters: Mapping[str, Any]
+    ) -> tuple[Optional[str], str]:
+        """Extract thinking content and return the answer based on delimiter config."""
+        start = delimiters.get("start")
+        end = delimiters.get("end")
+        if not start or not end:
+            return None, text
+        if start not in text:
+            return None, text
+
+        before_start, after_start = text.split(start, 1)
+        if end in after_start:
+            thinking_body, after_end = after_start.split(end, 1)
+        else:
+            thinking_body, after_end = after_start, ""
+
+        keep = bool(delimiters.get("keep_delimiters"))
+        thinking = f"{start}{thinking_body}{end}" if keep else thinking_body
+
+        mode = delimiters.get("mode", "after_end")
+        if mode == "after_end":
+            answer = after_end
+        elif mode == "remove":
+            answer = f"{before_start}{after_end}"
+        elif mode == "before_start":
+            answer = before_start
+        else:
+            answer = text
+        return thinking.strip(), answer.strip()
 
     @staticmethod
     def normalize_classification(
