@@ -2,14 +2,12 @@ models:
   - name: "deepseek-r1-distilled-llama-8b"
     type: "vllm"
     model_path: "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
-    local_dir: "./models/deepseek-r1-distill-llama-8b"
     sampling_kwargs:
       max_tokens: 256
 
   - name: "flan-t5"
     type: "huggingface"
     model_path: "google/flan-t5-base"
-    local_dir: "./models/flan-t5-base"
     model_class: "seq2seq"
     generation_kwargs:
       max_new_tokens: 128
@@ -31,3 +29,5 @@ evaluation:
   max_concurrent: 4
   output_dir: "runs"
   prediction_sample_size: 5
+
+models_dir: "./models"

@@ -60,6 +60,13 @@ class ConfigManager:
         evaluation.setdefault("save_detailed", False)
         evaluation.setdefault("max_detailed_examples", 50)
         config.setdefault("datasets_dir", "datasets")
+        models_dir = config.setdefault("models_dir", "models")
+        for model in config.get("models", []):
+            if "local_dir" not in model:
+                model_path = model.get("model_path") or model.get("name")
+                if model_path:
+                    safe_name = model_path.replace("/", "_").replace(" ", "_")
+                    model["local_dir"] = os.path.join(models_dir, safe_name)
         for task in config.get("tasks", []):
             # Metrics are optional; default to empty for pipeline flexibility.
             task.setdefault("metrics", [])
