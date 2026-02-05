@@ -129,6 +129,7 @@ class LLMEvaluator:
             detailed_examples = []
             for idx in range(limit):
                 extra = extras[idx] if extras else {}
+                prediction_with_prompt = f"{prompts[idx]}{raw_predictions[idx]}"
                 detailed_examples.append(
                     {
                         "index": idx,
@@ -136,6 +137,7 @@ class LLMEvaluator:
                         "prediction_raw": raw_predictions[idx],
                         "prediction_parsed": postprocessed_predictions[idx],
                         "prediction": metric_predictions[idx],
+                        "prediction_with_prompt": prediction_with_prompt,
                         "actual_raw": references[idx],
                         "actual": metric_references[idx],
                         "extra": extra,

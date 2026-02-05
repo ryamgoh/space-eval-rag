@@ -75,7 +75,12 @@ class HuggingFaceModel(BaseModel):
                 inputs = inputs.to(self.input_device)
             with torch.inference_mode():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
-            return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
+            if self.model_class == "causal":
+                # Causal LM outputs include the prompt; strip it to return only the completion.
+                prompt_len = inputs["input_ids"].shape[1]
+                sequences = sequences[:, prompt_len:]
+            return self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
 
         return await asyncio.to_thread(_run)
 
