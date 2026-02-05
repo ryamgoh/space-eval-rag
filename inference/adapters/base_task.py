@@ -38,6 +38,7 @@ class BaseTaskAdapter(ABC):
     ) -> Tuple[List[Any], List[Any], List[Mapping[str, Any]] | None]:
         """Generate predictions for prompts and optionally return extra metadata."""
         _ = task_cfg
+        # Return both completion-only predictions and raw outputs (if the model supports them).
         predictions, raw_predictions = await model.batch_generate_with_prompt(
             prompts, batch_size=batch_size, **kwargs
         )

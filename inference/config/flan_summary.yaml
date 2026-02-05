@@ -19,12 +19,15 @@ tasks:
       document: "document"
     reference_field: "summary"
     metrics: ["rouge"]
-    sample_size: 250
+    sample_size: 100
 
 evaluation:
-  batch_size: 2
+  batch_size: 5
   max_concurrent: 1
   output_dir: "runs"
   prediction_sample_size: 3
   save_detailed: true
   max_detailed_examples: 5
+  log_progress: true
+  progress_every_batches: 1
+  log_level: INFO
