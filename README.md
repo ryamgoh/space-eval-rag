@@ -39,13 +39,20 @@ runs/
 ```
 
 Detailed examples (when enabled) include:
-`prediction_raw`, `prediction_parsed`, `prediction`, `actual_raw`, `actual`.
+`prediction_raw`, `prediction_parsed`, `prediction`, `prediction_with_prompt`,
+`prediction_thinking`, `prediction_answer`, `actual_raw`, `actual`.
+
+Notes:
+- `prediction_raw` preserves special tokens (e.g., `<pad>`, `</s>`).
+- `prediction` and `prediction_parsed` are cleaned of special tokens; for causal models they are the completion only.
+- `prediction_with_prompt` mirrors `prediction_raw` so you can inspect the full model output.
+- `model_special_tokens` is included in run outputs when the backend exposes tokenizer metadata (HF models).
 
 ### Config highlights
 
 - `models`: list of model configs (`type: huggingface | vllm | api`)
 - `tasks`: list of tasks with dataset, prompt template, mappings, and metrics
-- `evaluation`: batch size, max concurrency, output directory, sample size, and output detail controls
+- `evaluation`: batch size, max concurrency, output directory, sample size, output detail controls, and optional per-batch logging (`log_progress`, `progress_every_batches`)
 - `datasets_dir`: where HF datasets are cached (default: `./datasets`)
 - `models_dir`: base directory for model downloads (default: `./models`)
 
@@ -56,8 +63,23 @@ The default `generic` adapter supports:
 - reference extraction
 - optional post-processing (`prediction_postprocess`)
 - optional classification normalization (`label_map`)
+- optional thinking delimiter extraction (`thinking_delimiters`)
 
 Dot-paths are supported in mappings and references (e.g., `translation.en`, `answers.0.text`).
+
+### Thinking delimiters
+
+You can split or strip "thinking" content with task-level config:
+
+```yaml
+thinking_delimiters:
+  start: "<think>"
+  end: "</think>"
+  mode: "after_end"          # after_end | remove | before_start | none
+  strip_from_prediction: true
+```
+
+When enabled, detailed examples include `prediction_thinking` and `prediction_answer`.
 
 ### Device placement (HF vs vLLM)
 
