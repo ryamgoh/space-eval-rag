@@ -59,6 +59,31 @@ The default `generic` adapter supports:
 
 Dot-paths are supported in mappings and references (e.g., `translation.en`, `answers.0.text`).
 
+### Device placement (HF vs vLLM)
+
+Hugging Face models are explicitly moved to a device. The adapter uses `device: "cuda"` when available (falls back to CPU). You can override it per model:
+
+```yaml
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    device: "cuda"
+```
+
+If you provide `model_kwargs.device_map`, we skip manual `.to(...)` so HF/Accelerate can shard/offload the model:
+
+```yaml
+models:
+  - name: "big-model"
+    type: "huggingface"
+    model_path: "org/model"
+    model_kwargs:
+      device_map: "auto"
+```
+
+vLLM manages device placement internally and uses visible GPUs. You should control GPU visibility via your environment (e.g., `CUDA_VISIBLE_DEVICES`) or vLLM’s own config when exposed.
+
 ### Model caching
 
 If `local_dir` is omitted on a model, it is automatically set to:
