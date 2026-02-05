@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List
 
 from inference.adapters import metric_adapters, task_adapters
 from inference.config.manager import ConfigManager
+from inference.logging.logger import Monitor
 from inference.model.base_model import BaseModel
 from inference.model.model import ModelFactory
 from inference.task.aggregator import ResultAggregator
@@ -37,6 +38,11 @@ class LLMEvaluator:
     async def run_async(self) -> Dict[str, Any]:
         """Execute evaluation jobs concurrently and write summary outputs."""
         evaluation = self.config["evaluation"]
+        # Centralized progress/metrics logging.
+        self.monitor = Monitor(
+            enabled=bool(evaluation.get("log_progress")),
+            level=str(evaluation.get("log_level", "INFO")),
+        )
         executor = ParallelExecutor(evaluation["max_concurrent"])
         output_dir = Path(evaluation["output_dir"])
         run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -87,11 +93,21 @@ class LLMEvaluator:
         references = task_adapter.extract_references(dataset, task)
 
         generation_kwargs = task.get("generation_kwargs", {})
+        log_progress = bool(evaluation.get("log_progress"))
+        progress_every = evaluation.get("progress_every_batches", 1)
+
+        def _progress_cb(done: int, total: int) -> None:
+            # Emit per-batch progress via the shared monitor.
+            if self.monitor:
+                self.monitor.log_progress(model.name, task["name"], done, total)
+
         completion_predictions, raw_predictions, extras = await task_adapter.generate_predictions(
             model,
             prompts,
             task,
             batch_size=evaluation["batch_size"],
+            progress_cb=_progress_cb if log_progress else None,
+            progress_every=progress_every,
             **generation_kwargs,
         )
 
@@ -119,6 +135,10 @@ class LLMEvaluator:
             "num_examples": len(prompts),
             "prediction_samples": metric_predictions[:prediction_sample_size],
         }
+        model_special_tokens = model.get_special_tokens()
+        if model_special_tokens:
+            # Preserve model-specific special token metadata in the run output.
+            result["model_special_tokens"] = model_special_tokens
 
         if evaluation.get("save_detailed"):
             max_examples = evaluation.get("max_detailed_examples")
@@ -126,10 +146,18 @@ class LLMEvaluator:
             limit = total if max_examples is None else min(total, max_examples)
             if extras is None:
                 extras = task_adapter.collect_extras(task, limit) or []
+            thinking_cfg = task.get("thinking_delimiters") or {}
             detailed_examples = []
             for idx in range(limit):
                 extra = extras[idx] if extras else {}
                 prediction_with_prompt = raw_predictions[idx]
+                thinking = None
+                answer_from_thinking = None
+                if thinking_cfg:
+                    # Split thinking/answer segments for inspection.
+                    thinking, answer_from_thinking = TaskProcessor.apply_thinking_delimiters(
+                        completion_predictions[idx], thinking_cfg
+                    )
                 detailed_examples.append(
                     {
                         "index": idx,
@@ -138,6 +166,8 @@ class LLMEvaluator:
                         "prediction_parsed": postprocessed_predictions[idx],
                         "prediction": metric_predictions[idx],
                         "prediction_with_prompt": prediction_with_prompt,
+                        "prediction_thinking": thinking,
+                        "prediction_answer": answer_from_thinking,
                         "actual_raw": references[idx],
                         "actual": metric_references[idx],
                         "extra": extra,

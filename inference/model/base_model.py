@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterable, List, Optional
+import math
+from typing import Any, Dict, Iterable, List, Optional
 
 
 class BaseModel(ABC):
@@ -51,14 +52,20 @@ class BaseModel(ABC):
         **kwargs,
     ) -> tuple[List[str], List[str] | None]:
         """Generate completions plus raw model outputs (if available), batching as needed."""
+        # Optional callback for per-batch progress reporting.
+        progress_cb = kwargs.pop("progress_cb", None)
+        progress_every = kwargs.pop("progress_every", 1)
+        if isinstance(progress_every, int) and progress_every < 1:
+            progress_every = 1
         prompts_list = list(prompts)
         if not prompts_list:
             return [], []
         effective_batch_size = batch_size or self.max_batch_size or len(prompts_list)
+        total_batches = math.ceil(len(prompts_list) / effective_batch_size)
         outputs: List[str] = []
         raw_outputs: List[str] = []
         raw_supported = True
-        for start in range(0, len(prompts_list), effective_batch_size):
+        for batch_index, start in enumerate(range(0, len(prompts_list), effective_batch_size), start=1):
             batch = prompts_list[start : start + effective_batch_size]
             batch_outputs, batch_raw = await self.generate_batch_with_prompt(batch, **kwargs)
             outputs.extend(batch_outputs)
@@ -66,9 +73,15 @@ class BaseModel(ABC):
                 raw_supported = False
             if raw_supported:
                 raw_outputs.extend(batch_raw)
+            if progress_cb and (batch_index == total_batches or batch_index % progress_every == 0):
+                progress_cb(batch_index, total_batches)
         if not raw_supported:
             return outputs, None
         return outputs, raw_outputs
+
+    def get_special_tokens(self) -> Optional[Dict[str, Any]]:
+        """Return special token metadata if the backend exposes it."""
+        return None
 
     @abstractmethod
     async def generate_batch(self, prompts: List[str], **kwargs) -> List[str]:

@@ -59,6 +59,10 @@ class ConfigManager:
         evaluation.setdefault("prediction_sample_size", 5)
         evaluation.setdefault("save_detailed", False)
         evaluation.setdefault("max_detailed_examples", 50)
+        # Optional progress logging defaults.
+        evaluation.setdefault("log_progress", False)
+        evaluation.setdefault("progress_every_batches", 1)
+        evaluation.setdefault("log_level", "INFO")
         config.setdefault("datasets_dir", "datasets")
         models_dir = config.setdefault("models_dir", "models")
         for model in config.get("models", []):
