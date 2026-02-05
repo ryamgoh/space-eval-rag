@@ -5,27 +5,26 @@ models:
     local_dir: "../models/google/flan-t5-small"
     model_class: "seq2seq"
     generation_kwargs:
-      max_new_tokens: 8
+      max_new_tokens: 32
       do_sample: false
 
 datasets_dir: "./datasets"
-# models_dir: "../models"
 
 tasks:
-  - name: "sciq-mini"
-    dataset: "sciq"
+  - name: "xsum-mini"
+    dataset: "xsum"
     split: "validation"
-    prompt_template: "Question: {question}\nAnswer:"
+    prompt_template: "Summarize:\n{document}"
     input_mappings:
-      question: "question"
-    reference_field: "correct_answer"
+      document: "document"
+    reference_field: "summary"
     metrics: ["rouge"]
-    sample_size: 100
+    sample_size: 250
 
 evaluation:
   batch_size: 2
   max_concurrent: 1
   output_dir: "runs"
-  prediction_sample_size: 5
+  prediction_sample_size: 3
   save_detailed: true
-  max_detailed_examples: 10
+  max_detailed_examples: 5

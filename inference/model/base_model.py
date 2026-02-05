@@ -35,6 +35,41 @@ class BaseModel(ABC):
             outputs.extend(await self.generate_batch(batch, **kwargs))
         return outputs
 
+    async def generate_batch_with_prompt(
+        self,
+        prompts: List[str],
+        **kwargs,
+    ) -> tuple[List[str], List[str] | None]:
+        """Generate completions plus raw model outputs for a single batch."""
+        outputs = await self.generate_batch(prompts, **kwargs)
+        return outputs, None
+
+    async def batch_generate_with_prompt(
+        self,
+        prompts: Iterable[str],
+        batch_size: Optional[int] = None,
+        **kwargs,
+    ) -> tuple[List[str], List[str] | None]:
+        """Generate completions plus raw model outputs (if available), batching as needed."""
+        prompts_list = list(prompts)
+        if not prompts_list:
+            return [], []
+        effective_batch_size = batch_size or self.max_batch_size or len(prompts_list)
+        outputs: List[str] = []
+        raw_outputs: List[str] = []
+        raw_supported = True
+        for start in range(0, len(prompts_list), effective_batch_size):
+            batch = prompts_list[start : start + effective_batch_size]
+            batch_outputs, batch_raw = await self.generate_batch_with_prompt(batch, **kwargs)
+            outputs.extend(batch_outputs)
+            if batch_raw is None:
+                raw_supported = False
+            if raw_supported:
+                raw_outputs.extend(batch_raw)
+        if not raw_supported:
+            return outputs, None
+        return outputs, raw_outputs
+
     @abstractmethod
     async def generate_batch(self, prompts: List[str], **kwargs) -> List[str]:
         """Backend-specific batch generation implementation."""

@@ -66,23 +66,36 @@ class HuggingFaceModel(BaseModel):
 
     async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
         """Generate responses for a batch of prompts."""
+        outputs, _ = await self.generate_batch_with_prompt(prompts, **kwargs)
+        return outputs
+
+    async def generate_batch_with_prompt(
+        self,
+        prompts: list[str],
+        **kwargs,
+    ) -> tuple[list[str], list[str] | None]:
+        """Generate completions plus raw model outputs (prompt + completion for causal)."""
         gen_kwargs = {**self.generation_kwargs, **kwargs}
 
-        def _run() -> list[str]:
-            # Run generation in a worker thread to avoid blocking the event loop.
-            inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
+        def _run(batch: list[str]) -> tuple[list[str], list[str]]:
+            inputs = self.tokenizer(batch, return_tensors="pt", padding=True, truncation=True)
             if self.input_device is not None:
                 inputs = inputs.to(self.input_device)
             with torch.inference_mode():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
             sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
+            full_text = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
             if self.model_class == "causal":
-                # Causal LM outputs include the prompt; strip it to return only the completion.
+                # Causal LM outputs include the prompt; keep full text and decode completion separately.
                 prompt_len = inputs["input_ids"].shape[1]
-                sequences = sequences[:, prompt_len:]
-            return self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
+                completion_seqs = sequences[:, prompt_len:]
+                completion_text = self.tokenizer.batch_decode(
+                    completion_seqs, skip_special_tokens=True
+                )
+                return completion_text, full_text
+            return full_text, full_text
 
-        return await asyncio.to_thread(_run)
+        return await asyncio.to_thread(_run, list(prompts))
 
 
 class VLLMModel(BaseModel):

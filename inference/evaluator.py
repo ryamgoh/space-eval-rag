@@ -87,7 +87,7 @@ class LLMEvaluator:
         references = task_adapter.extract_references(dataset, task)
 
         generation_kwargs = task.get("generation_kwargs", {})
-        raw_predictions, extras = await task_adapter.generate_predictions(
+        completion_predictions, raw_predictions, extras = await task_adapter.generate_predictions(
             model,
             prompts,
             task,
@@ -95,7 +95,7 @@ class LLMEvaluator:
             **generation_kwargs,
         )
 
-        postprocessed_predictions = task_adapter.postprocess_predictions(raw_predictions, task)
+        postprocessed_predictions = task_adapter.postprocess_predictions(completion_predictions, task)
         metric_predictions, metric_references = task_adapter.normalize_for_metrics(
             postprocessed_predictions, references, task
         )
@@ -129,7 +129,7 @@ class LLMEvaluator:
             detailed_examples = []
             for idx in range(limit):
                 extra = extras[idx] if extras else {}
-                prediction_with_prompt = f"{prompts[idx]}{raw_predictions[idx]}"
+                prediction_with_prompt = raw_predictions[idx]
                 detailed_examples.append(
                     {
                         "index": idx,

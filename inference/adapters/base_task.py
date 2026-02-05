@@ -35,10 +35,15 @@ class BaseTaskAdapter(ABC):
         task_cfg: Mapping[str, Any],
         batch_size: int,
         **kwargs,
-    ) -> Tuple[List[Any], List[Mapping[str, Any]] | None]:
+    ) -> Tuple[List[Any], List[Any], List[Mapping[str, Any]] | None]:
         """Generate predictions for prompts and optionally return extra metadata."""
-        predictions = await model.batch_generate(prompts, batch_size=batch_size, **kwargs)
-        return list(predictions), None
+        _ = task_cfg
+        predictions, raw_predictions = await model.batch_generate_with_prompt(
+            prompts, batch_size=batch_size, **kwargs
+        )
+        if raw_predictions is None:
+            raw_predictions = list(predictions)
+        return list(predictions), list(raw_predictions), None
 
     def collect_extras(
         self, task_cfg: Mapping[str, Any], count: int
