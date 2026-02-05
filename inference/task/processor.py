@@ -136,27 +136,44 @@ class TaskProcessor:
         """Extract thinking content and return the answer based on delimiter config."""
         start = delimiters.get("start")
         end = delimiters.get("end")
-        if not start or not end:
+        if not start and not end:
             return None, text
-        if start not in text:
+        if start and start not in text:
+            return None, text
+        if end and end not in text:
             return None, text
 
-        before_start, after_start = text.split(start, 1)
-        if end in after_start:
-            thinking_body, after_end = after_start.split(end, 1)
-        else:
-            thinking_body, after_end = after_start, ""
+        if start:
+            before_start, after_start = text.split(start, 1)
+            if end and end in after_start:
+                thinking_body, after_end = after_start.split(end, 1)
+            else:
+                thinking_body, after_end = after_start, ""
+            keep = bool(delimiters.get("keep_delimiters"))
+            thinking = f"{start}{thinking_body}{end}" if keep and end else thinking_body
 
+            mode = delimiters.get("mode", "after_end")
+            if mode == "after_end":
+                answer = after_end
+            elif mode == "remove":
+                answer = f"{before_start}{after_end}"
+            elif mode == "before_start":
+                answer = before_start
+            else:
+                answer = text
+            return thinking.strip(), answer.strip()
+
+        # End-only delimiters: split on the last end token.
+        before_end, after_end = text.rsplit(end, 1)
         keep = bool(delimiters.get("keep_delimiters"))
-        thinking = f"{start}{thinking_body}{end}" if keep else thinking_body
-
+        thinking = f"{before_end}{end}" if keep else before_end
         mode = delimiters.get("mode", "after_end")
         if mode == "after_end":
             answer = after_end
         elif mode == "remove":
-            answer = f"{before_start}{after_end}"
+            answer = after_end
         elif mode == "before_start":
-            answer = before_start
+            answer = before_end
         else:
             answer = text
         return thinking.strip(), answer.strip()

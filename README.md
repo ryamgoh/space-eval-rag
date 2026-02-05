@@ -81,6 +81,17 @@ thinking_delimiters:
 
 When enabled, detailed examples include `prediction_thinking` and `prediction_answer`.
 
+End-only example (models that emit only a closing tag):
+
+```yaml
+thinking_delimiters:
+  end: "</thinking>"
+  mode: "after_end"
+  strip_from_prediction: true
+```
+
+For end-only delimiters, the split uses the last occurrence of `end`.
+
 ### Device placement (HF vs vLLM)
 
 Hugging Face models are explicitly moved to a device. The adapter uses `device: "cuda"` when available (falls back to CPU). You can override it per model:
