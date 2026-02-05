@@ -65,8 +65,9 @@ class ConfigManager:
             if "local_dir" not in model:
                 model_path = model.get("model_path") or model.get("name")
                 if model_path:
-                    safe_name = model_path.replace("/", "_").replace(" ", "_")
-                    model["local_dir"] = os.path.join(models_dir, safe_name)
+                    # Preserve hub-style paths (e.g., org/model) as nested folders.
+                    relative_path = model_path.strip("/").replace(" ", "_")
+                    model["local_dir"] = os.path.join(models_dir, relative_path)
         for task in config.get("tasks", []):
             # Metrics are optional; default to empty for pipeline flexibility.
             task.setdefault("metrics", [])
