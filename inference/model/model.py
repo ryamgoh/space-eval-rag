@@ -4,6 +4,7 @@ import asyncio
 import os
 from typing import Any, Dict, Optional
 
+import torch
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
 from inference.model.base_model import BaseModel
@@ -37,6 +38,8 @@ class HuggingFaceModel(BaseModel):
         model_kwargs = config.get("model_kwargs", {})
         model_class = config.get("model_class", "causal")
         trust_remote = config.get("trust_remote_code", False)
+        # Device map implies HF/Accelerate will handle sharding/offload.
+        self.uses_device_map = "device_map" in model_kwargs
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             resolved_path, cache_dir=cache_dir, trust_remote_code=trust_remote, **tokenizer_kwargs
@@ -51,6 +54,13 @@ class HuggingFaceModel(BaseModel):
         self.model = model_cls.from_pretrained(
             resolved_path, cache_dir=cache_dir, trust_remote_code=trust_remote, **model_kwargs
         )
+        # Default to CUDA when available, but allow config override.
+        self.device = config.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
+        if not self.uses_device_map:
+            # Keep it simple for single-device runs; device_map users manage placement themselves.
+            self.model.to(self.device)
+        # Ensure inputs land on the model's expected device.
+        self.input_device = self.model.device if self.uses_device_map else torch.device(self.device)
         self.model.eval()
         self.generation_kwargs = config.get("generation_kwargs", {})
 
@@ -61,7 +71,10 @@ class HuggingFaceModel(BaseModel):
         def _run() -> list[str]:
             # Run generation in a worker thread to avoid blocking the event loop.
             inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
-            outputs = self.model.generate(**inputs, **gen_kwargs)
+            if self.input_device is not None:
+                inputs = inputs.to(self.input_device)
+            with torch.inference_mode():
+                outputs = self.model.generate(**inputs, **gen_kwargs)
             return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         return await asyncio.to_thread(_run)
