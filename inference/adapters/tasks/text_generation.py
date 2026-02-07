@@ -9,9 +9,9 @@ from inference.rag.prompt_builder import RAGPromptBuilder
 from inference.task.processor import TaskProcessor
 
 
-class GenericTextTaskAdapter(BaseTaskAdapter):
+class TextGenerationTaskAdapter(BaseTaskAdapter):
     """Default adapter for text-in/text-out tasks."""
-    name = "generic"
+    name = "text_generation"
 
     def build_prompts(self, dataset: Dataset, task_cfg: Mapping[str, Any]) -> List[str]:
         """Render prompt templates for each row."""
@@ -64,3 +64,23 @@ class GenericTextTaskAdapter(BaseTaskAdapter):
         if not extras:
             return None
         return list(extras[:count])
+
+
+class GenericTextTaskAdapter(TextGenerationTaskAdapter):
+    """Backward-compatible alias for the text generation adapter."""
+    name = "generic"
+
+
+class ClassificationTaskAdapter(TextGenerationTaskAdapter):
+    """Adapter for single-label classification prompts."""
+    name = "classification"
+
+
+class QATaskAdapter(TextGenerationTaskAdapter):
+    """Adapter for question-answering prompts."""
+    name = "qa"
+
+
+class SummarizationTaskAdapter(TextGenerationTaskAdapter):
+    """Adapter for summarization prompts."""
+    name = "summarization"
