@@ -1,4 +1,4 @@
-## space-eval-rag (RAG disabled for now)
+## space-eval-rag
 
 Minimal async pipeline to evaluate multiple LLMs across multiple tasks with pluggable metrics.
 
@@ -55,16 +55,24 @@ Notes:
 - `evaluation`: batch size, max concurrency, output directory, sample size, output detail controls, and optional per-batch logging (`log_progress`, `progress_every_batches`)
 - `datasets_dir`: where HF datasets are cached (default: `./datasets`)
 - `models_dir`: base directory for model downloads (default: `./models`)
+- `rag`: optional per-task block to enable retrieval-augmented prompts
 
-### Generic task adapter
+RAG can be enabled per task, so a single config can mix tasks that use retrieval with tasks that do not.
 
-The default `generic` adapter supports:
+### Text generation adapter
+
+The default `text_generation` adapter (also available as `generic`) supports:
 - prompt templating from dataset fields
 - reference extraction
 - optional post-processing (`prediction_postprocess`)
 - optional classification normalization (`label_map`)
 - optional thinking delimiter extraction (`thinking_delimiters`)
 - optional RAG context injection (`rag`)
+
+Additional adapters are available for clarity when configuring tasks:
+- `classification`
+- `qa`
+- `summarization`
 
 Dot-paths are supported in mappings and references (e.g., `translation.en`, `answers.0.text`).
 
