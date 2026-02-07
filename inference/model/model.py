@@ -1,27 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, Dict, Optional
 
 import torch
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
 from inference.model.base_model import BaseModel
-
-
-def _resolve_model_path(model_path: str, local_dir: Optional[str]) -> tuple[str, Optional[str]]:
-    """Decide whether to load from local dir or download into it."""
-    if not local_dir:
-        return model_path, None
-
-    os.makedirs(local_dir, exist_ok=True)
-    marker_files = ("config.json", "model.safetensors", "pytorch_model.bin")
-    # Treat local_dir as a model path only if it already looks populated.
-    has_model_files = any(os.path.exists(os.path.join(local_dir, name)) for name in marker_files)
-    if has_model_files:
-        return local_dir, local_dir
-    return model_path, local_dir
+from inference.util.model_paths import resolve_model_path
 
 
 class HuggingFaceModel(BaseModel):
@@ -32,7 +18,7 @@ class HuggingFaceModel(BaseModel):
         super().__init__(name=name, model_type="huggingface", max_batch_size=config.get("max_batch_size"))
         model_path = config["model_path"]
         local_dir = config.get("local_dir")
-        resolved_path, cache_dir = _resolve_model_path(model_path, local_dir)
+        resolved_path, cache_dir = resolve_model_path(model_path, local_dir)
 
         tokenizer_kwargs = config.get("tokenizer_kwargs", {})
         model_kwargs = config.get("model_kwargs", {})
@@ -121,7 +107,7 @@ class VLLMModel(BaseModel):
 
         model_path = config["model_path"]
         local_dir = config.get("local_dir")
-        resolved_path, download_dir = _resolve_model_path(model_path, local_dir)
+        resolved_path, download_dir = resolve_model_path(model_path, local_dir)
         self.sampling_params = SamplingParams(**config.get("sampling_kwargs", {}))
         self.llm = LLM(model=resolved_path, download_dir=download_dir)
 
