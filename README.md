@@ -64,8 +64,89 @@ The default `generic` adapter supports:
 - optional post-processing (`prediction_postprocess`)
 - optional classification normalization (`label_map`)
 - optional thinking delimiter extraction (`thinking_delimiters`)
+- optional RAG context injection (`rag`)
 
 Dot-paths are supported in mappings and references (e.g., `translation.en`, `answers.0.text`).
+
+### RAG (FAISS + embeddings)
+
+You can enable a simple retrieval-augmented flow on a per-task basis. RAG builds a
+FAISS index from a separate corpus dataset, retrieves top-k passages, and injects
+them into the prompt via a `{context}` placeholder.
+
+Example:
+
+```yaml
+tasks:
+  - name: "qa-sciq-rag"
+    dataset: "sciq"
+    split: "validation"
+    prompt_template: |
+      Use the context to answer.
+      Context:
+      {context}
+
+      Question: {question}
+      Answer:
+    input_mappings:
+      question: "question"
+    reference_field: "correct_answer"
+    rag:
+      enabled: true
+      context_k: 3
+      context_template: "- {text}"
+      context_separator: "\n"
+      query_template: "Question: {question}"
+      query_mappings:
+        question: "question"
+      corpus:
+        name: "sciq"
+        split: "train"
+      corpus_template: "{question}\n{correct_answer}"
+      corpus_mappings:
+        question: "question"
+        correct_answer: "correct_answer"
+      embedding_model:
+        model_path: "sentence-transformers/all-MiniLM-L6-v2"
+        local_dir: "./models/all-MiniLM-L6-v2"
+        max_length: 256
+        batch_size: 32
+        pooling: "mean"
+      cache_dir: "./rag_cache"
+      cache_key: "sciq_train_miniLM"
+```
+
+Notes:
+- `{context}` must appear in the `prompt_template` when RAG is enabled.
+- `rag.query_template` defaults to the task's `prompt_template` with `{context}` removed.
+- If `rag.cache_dir` is set, the FAISS index + metadata is cached under `rag.cache_key`.
+
+#### File corpus loader
+
+You can point `rag.corpus` at local files directly:
+
+```yaml
+rag:
+  enabled: true
+  corpus:
+    type: "files"
+    paths:
+      - "/path/to/docs"
+      - "/path/to/notes.md"
+    glob: "data/**/*.jsonl"
+    recursive: true
+    extensions: ["txt", "md", "jsonl", "pdf"]
+    chunk_size: 1200
+    chunk_overlap: 200
+  corpus_template: "{text}"
+  corpus_mappings:
+    text: "text"
+  embedding_model:
+    model_path: "sentence-transformers/all-MiniLM-L6-v2"
+```
+
+Supported formats: `.txt`, `.md`, `.jsonl`, `.pdf`. JSONL files are read one object per line.
+Chunking is optional and happens on the `text` field when `chunk_size` is provided.
 
 ### Thinking delimiters
 
@@ -146,6 +227,7 @@ becomes:
 - `inference/config/classify.yaml` (classification only)
 - `inference/config/sciq_generic.yaml` (SciQ QA test)
 - `inference/config/generic_test.yaml` (generic adapter demo)
+- `inference/config/rag_example.yaml` (RAG + FAISS demo)
 
 ### Notes
 

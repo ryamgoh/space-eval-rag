@@ -49,6 +49,15 @@ class TaskProcessor:
                 return data
             return Dataset.from_list(list(data))
 
+        if dataset_config.get("type") == "files":
+            from inference.datasets.file_corpus import load_files_dataset
+
+            # Local file corpus loader for RAG use cases.
+            data = load_files_dataset(dataset_config)
+            if isinstance(data, Dataset):
+                return data
+            return Dataset.from_list(list(data))
+
         dataset_name = dataset_config.get("name") or dataset_config.get("path")
         if not dataset_name:
             raise ValueError("dataset config requires a name or path.")
@@ -67,9 +76,21 @@ class TaskProcessor:
         """Render prompt templates using dataset rows."""
         prompts: List[str] = []
         for row in dataset:
-            values = {key: TaskProcessor.resolve_field(row, field) for key, field in mappings.items()}
-            prompts.append(template.format_map(values))
+            prompts.append(TaskProcessor.render_template(row, template, mappings))
         return prompts
+
+    @staticmethod
+    def render_template(
+        row: Mapping[str, Any],
+        template: str,
+        mappings: Mapping[str, str],
+        extras: Mapping[str, Any] | None = None,
+    ) -> str:
+        """Render a single template from a row with optional extra fields."""
+        values = {key: TaskProcessor.resolve_field(row, field) for key, field in mappings.items()}
+        if extras:
+            values.update(extras)
+        return template.format_map(values)
 
     @staticmethod
     def extract_references(dataset: Dataset, task_config: Mapping[str, Any]) -> List[Any]:

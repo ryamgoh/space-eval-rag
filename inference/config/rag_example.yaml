@@ -1,0 +1,62 @@
+datasets_dir: "./datasets"
+models_dir: "../models"
+
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    model_class: "seq2seq"
+    generation_kwargs:
+      max_new_tokens: 64
+      do_sample: false
+
+tasks:
+  - name: "sciq-rag-mini"
+    dataset: "sciq"
+    split: "validation"
+    prompt_template: |
+      Use the context to answer the question.
+      Context:
+      {context}
+
+      Question: {question}
+      Answer:
+    input_mappings:
+      question: "question"
+    reference_field: "correct_answer"
+    metrics:
+      - name: "rouge"
+        adapter: "hf"
+    sample_size: 200
+    generation_kwargs:
+      max_new_tokens: 8
+      do_sample: false
+    rag:
+      enabled: false
+      context_k: 3
+      context_template: "- {text}"
+      context_separator: "\n"
+      query_template: "Question: {question}"
+      query_mappings:
+        question: "question"
+      corpus:
+        name: "sciq"
+        split: "train"
+      corpus_template: "{question}\n{correct_answer}"
+      corpus_mappings:
+        question: "question"
+        correct_answer: "correct_answer"
+      embedding_model:
+        model_path: "sentence-transformers/all-MiniLM-L6-v2"
+        max_length: 256
+        batch_size: 32
+        pooling: "mean"
+      cache_dir: "./rag_cache"
+      cache_key: "sciq_train_miniLM"
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 2
+  output_dir: "runs"
+  prediction_sample_size: 5
+  save_detailed: true

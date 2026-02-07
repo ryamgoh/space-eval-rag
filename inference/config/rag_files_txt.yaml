@@ -1,0 +1,67 @@
+datasets_dir: "./datasets"
+
+models:
+  - name: "flan-t5-small"
+    type: "huggingface"
+    model_path: "google/flan-t5-small"
+    local_dir: "./models/flan-t5-small"
+    model_class: "seq2seq"
+    generation_kwargs:
+      max_new_tokens: 64
+      do_sample: false
+
+tasks:
+  - name: "sciq-rag-files-txt"
+    dataset: "sciq"
+    split: "validation"
+    prompt_template: |
+      Use the context to answer the question.
+      Context:
+      {context}
+
+      Question: {question}
+      Answer:
+    input_mappings:
+      question: "question"
+    reference_field: "correct_answer"
+    metrics:
+      - name: "rouge"
+        adapter: "hf"
+    sample_size: 8
+    generation_kwargs:
+      max_new_tokens: 8
+      do_sample: false
+    rag:
+      enabled: true
+      context_k: 3
+      context_template: "- {text}"
+      context_separator: "\n"
+      query_template: "Question: {question}"
+      query_mappings:
+        question: "question"
+      corpus:
+        type: "files"
+        paths:
+          - "/path/to/txt_files"
+        extensions: ["txt"]
+        recursive: true
+        chunk_size: 1200
+        chunk_overlap: 200
+      corpus_template: "{text}"
+      corpus_mappings:
+        text: "text"
+      embedding_model:
+        model_path: "sentence-transformers/all-MiniLM-L6-v2"
+        local_dir: "./models/all-MiniLM-L6-v2"
+        max_length: 256
+        batch_size: 32
+        pooling: "mean"
+      cache_dir: "./rag_cache"
+      cache_key: "files_txt_v1"
+
+evaluation:
+  batch_size: 2
+  max_concurrent: 2
+  output_dir: "runs"
+  prediction_sample_size: 5
+  save_detailed: true

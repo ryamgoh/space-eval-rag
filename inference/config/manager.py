@@ -47,6 +47,40 @@ class ConfigManager:
                 raise ConfigError("Each task requires input_mappings or fields.")
             if "metrics" in task and not isinstance(task["metrics"], list):
                 raise ConfigError("Task metrics must be a list.")
+            rag_cfg = task.get("rag")
+            if rag_cfg is None:
+                if "{context}" in task.get("prompt_template", ""):
+                    raise ConfigError("prompt_template includes '{context}' but rag is not configured.")
+            else:
+                if not isinstance(rag_cfg, dict):
+                    raise ConfigError("rag must be a mapping when provided.")
+                if rag_cfg.get("enabled"):
+                    if "{context}" not in task.get("prompt_template", ""):
+                        raise ConfigError("RAG enabled requires '{context}' in prompt_template.")
+                    if "corpus" not in rag_cfg:
+                        raise ConfigError("RAG enabled requires rag.corpus.")
+                    if "corpus_template" not in rag_cfg:
+                        raise ConfigError("RAG enabled requires rag.corpus_template.")
+                    if "corpus_mappings" not in rag_cfg:
+                        raise ConfigError("RAG enabled requires rag.corpus_mappings.")
+                    embed_cfg = rag_cfg.get("embedding_model")
+                    if not isinstance(embed_cfg, dict) or "model_path" not in embed_cfg:
+                        raise ConfigError("RAG enabled requires rag.embedding_model.model_path.")
+                    if "context_k" in rag_cfg:
+                        context_k = rag_cfg["context_k"]
+                        if not isinstance(context_k, int) or context_k < 1:
+                            raise ConfigError("rag.context_k must be a positive integer.")
+                    if "query_mappings" in rag_cfg and not isinstance(
+                        rag_cfg["query_mappings"], dict
+                    ):
+                        raise ConfigError("rag.query_mappings must be a mapping.")
+                    if "corpus_mappings" in rag_cfg and not isinstance(
+                        rag_cfg["corpus_mappings"], dict
+                    ):
+                        raise ConfigError("rag.corpus_mappings must be a mapping.")
+                else:
+                    if "{context}" in task.get("prompt_template", ""):
+                        raise ConfigError("rag.enabled is false but prompt_template includes '{context}'.")
 
     @staticmethod
     def merge_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -75,4 +109,18 @@ class ConfigManager:
         for task in config.get("tasks", []):
             # Metrics are optional; default to empty for pipeline flexibility.
             task.setdefault("metrics", [])
+            rag_cfg = task.get("rag")
+            if isinstance(rag_cfg, dict):
+                rag_cfg.setdefault("enabled", False)
+                rag_cfg.setdefault("context_k", 3)
+                rag_cfg.setdefault("context_template", "{text}")
+                rag_cfg.setdefault("context_separator", "\n\n")
+                # Keep embedding config lightweight but explicit.
+                embedding_cfg = rag_cfg.setdefault("embedding_model", {})
+                embedding_cfg.setdefault("pooling", "mean")
+                embedding_cfg.setdefault("batch_size", 32)
+                if "query_mappings" not in rag_cfg and "input_mappings" in task:
+                    rag_cfg["query_mappings"] = task["input_mappings"]
+                if "query_template" not in rag_cfg and "prompt_template" in task:
+                    rag_cfg["query_template"] = task["prompt_template"].replace("{context}", "")
         return config
