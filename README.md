@@ -238,6 +238,7 @@ becomes:
 - `inference/config/sciq_generic.yaml` (SciQ QA test)
 - `inference/config/generic_test.yaml` (generic adapter demo)
 - `inference/config/rag_example.yaml` (RAG + FAISS demo)
+- `inference/config/rag_files_docx.yaml` (RAG + DOCX files)
 
 ### Notes
 
