@@ -37,14 +37,17 @@ class ConfigManager:
         for model in config["models"]:
             if "name" not in model or "type" not in model:
                 raise ConfigError("Each model requires 'name' and 'type'.")
+            model_type = str(model["type"]).lower()
+            if model_type in {"huggingface", "vllm"} and "model_path" not in model:
+                raise ConfigError(f"Model '{model.get('name', '')}' requires 'model_path'.")
 
         for task in config["tasks"]:
             if "name" not in task or "dataset" not in task:
                 raise ConfigError("Each task requires 'name' and 'dataset'.")
-            if "prompt_template" not in task and "prompt_templates" not in task:
-                raise ConfigError("Each task requires prompt_template or prompt_templates.")
-            if "input_mappings" not in task and "fields" not in task:
-                raise ConfigError("Each task requires input_mappings or fields.")
+            if "prompt_template" not in task:
+                raise ConfigError("Each task requires prompt_template.")
+            if "input_mappings" not in task:
+                raise ConfigError("Each task requires input_mappings.")
             if "metrics" in task and not isinstance(task["metrics"], list):
                 raise ConfigError("Task metrics must be a list.")
             rag_cfg = task.get("rag")
