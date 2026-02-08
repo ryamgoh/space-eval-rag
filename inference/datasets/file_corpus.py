@@ -3,20 +3,22 @@ from __future__ import annotations
 import glob
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping
 
-from inference.datasets.readers import read_jsonl_file, read_pdf_file, read_text_file
 from inference.datasets.readers.base import (
     JSONL_EXTENSIONS,
     PDF_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
     TEXT_EXTENSIONS,
-    chunk_text,
     normalize_extensions,
 )
 
+from langchain_community.document_loaders import JSONLoader, PyPDFLoader, TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
 class FileCorpusLoader:
-    """Load a dataset from local files in txt, md, jsonl, or pdf formats."""
+    """Load a dataset from local files using LangChain loaders and splitters."""
     def __init__(self, config: Mapping[str, Any]):
         self.config = config
         self.chunk_size = config.get("chunk_size")
@@ -24,16 +26,25 @@ class FileCorpusLoader:
         self.include_metadata = bool(config.get("include_metadata", True))
         self.extensions = normalize_extensions(config.get("extensions"), SUPPORTED_EXTENSIONS)
         self.recursive = bool(config.get("recursive", True))
+        self.json_content_key = str(config.get("json_content_key", "text"))
+        self.json_jq_schema = config.get("json_jq_schema")
+
+        if self.chunk_size is not None:
+            chunk_size = int(self.chunk_size)
+            if chunk_size <= 0:
+                self.chunk_size = None
+            elif self.chunk_overlap >= chunk_size:
+                raise ValueError("chunk_overlap must be smaller than chunk_size.")
 
     def load(self) -> List[Dict[str, Any]]:
         """Load and normalize documents from the configured corpus paths."""
         paths = self._iter_paths()
-        docs: List[Dict[str, Any]] = []
+        documents: List[Dict[str, Any]] = []
         for path in paths:
-            docs.extend(self._load_path(path))
-        if not docs:
+            documents.extend(self._load_path(path))
+        if not documents:
             raise ValueError("No documents loaded from file corpus.")
-        return docs
+        return documents
 
     def _iter_paths(self) -> List[Path]:
         paths: List[Path] = []
@@ -43,7 +54,6 @@ class FileCorpusLoader:
             paths.append(Path(self.config["path"]))
         if "glob" in self.config:
             pattern = str(self.config["glob"])
-            # Use glob for patterns like data/**/*.jsonl.
             paths.extend(Path(p) for p in glob.glob(pattern, recursive=self.recursive))
 
         if not paths:
@@ -71,47 +81,62 @@ class FileCorpusLoader:
     def _load_path(self, path: Path) -> List[Dict[str, Any]]:
         suffix = path.suffix.lower()
         if suffix in JSONL_EXTENSIONS:
-            return self._load_jsonl(path)
-        if suffix in TEXT_EXTENSIONS:
-            text = read_text_file(path)
-            return list(self._emit_text_docs(text, self._base_doc(path)))
-        if suffix in PDF_EXTENSIONS:
-            text = read_pdf_file(path)
-            return list(self._emit_text_docs(text, self._base_doc(path)))
-        return []
+            docs = self._load_jsonl(path)
+        elif suffix in TEXT_EXTENSIONS:
+            docs = TextLoader(str(path), encoding="utf-8").load()
+        elif suffix in PDF_EXTENSIONS:
+            docs = PyPDFLoader(str(path)).load()
+        else:
+            docs = []
 
-    def _load_jsonl(self, path: Path) -> List[Dict[str, Any]]:
-        docs: List[Dict[str, Any]] = []
-        for obj in read_jsonl_file(path, include_metadata=self.include_metadata):
-            docs.extend(self._emit_text_docs(obj.get("text"), obj))
-        return docs
+        if self.chunk_size:
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=int(self.chunk_size),
+                chunk_overlap=self.chunk_overlap,
+                add_start_index=True,
+            )
+            docs = splitter.split_documents(docs)
 
-    def _base_doc(self, path: Path) -> Dict[str, Any]:
-        if not self.include_metadata:
-            return {}
-        return {"source_path": str(path)}
+        return self._format_docs(docs)
 
-    def _emit_text_docs(self, text: str | None, base_doc: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
-        if not text:
-            return []
-        if not self.chunk_size:
-            doc = dict(base_doc)
-            doc["text"] = text
-            return [doc]
+    def _load_jsonl(self, path: Path):
+        jq_schema = self.json_jq_schema or f".{self.json_content_key}"
+        loader = JSONLoader(
+            file_path=str(path),
+            jq_schema=jq_schema,
+            json_lines=True,
+        )
+        try:
+            return loader.load()
+        except Exception as exc:  # pragma: no cover - surface loader errors
+            raise ValueError(
+                f"Failed to load JSONL corpus at {path}. "
+                "Set corpus.json_jq_schema or corpus.json_content_key if needed, "
+                "and ensure the 'jq' Python package is installed."
+            ) from exc
 
-        docs: List[Dict[str, Any]] = []
-        for chunk, start, end, idx in self._chunk_text(text):
-            doc = dict(base_doc)
-            doc["text"] = chunk
-            doc["chunk_index"] = idx
-            doc["chunk_start"] = start
-            doc["chunk_end"] = end
-            docs.append(doc)
-        return docs
+    def _format_docs(self, docs) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        for idx, doc in enumerate(docs):
+            metadata = dict(getattr(doc, "metadata", {}) or {})
+            if "source" in metadata and "source_path" not in metadata:
+                metadata["source_path"] = metadata["source"]
+            if "seq_num" in metadata and "line_number" not in metadata:
+                metadata["line_number"] = metadata["seq_num"]
+            if "start_index" in metadata and "chunk_start" not in metadata:
+                start = int(metadata["start_index"])
+                metadata["chunk_start"] = start
+                metadata["chunk_end"] = start + len(doc.page_content)
+            if self.chunk_size:
+                metadata.setdefault("chunk_index", idx)
+            if not self.include_metadata:
+                metadata = {}
+            record = {"text": doc.page_content}
+            record.update(metadata)
+            results.append(record)
+        return results
 
-    def _chunk_text(self, text: str) -> Iterable[Tuple[str, int, int, int]]:
-        return chunk_text(text, int(self.chunk_size), self.chunk_overlap)
 
 def load_files_dataset(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Load a dataset from local files in txt, md, jsonl, or pdf formats."""
+    """Load a dataset from local files using LangChain loaders/splitters."""
     return FileCorpusLoader(config).load()
