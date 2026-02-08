@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
-import json
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from inference.rag.embeddings import HFEmbeddingModel
 from inference.rag.index import FAISSIndex
@@ -23,31 +21,15 @@ class RAGManager:
             self._embedder = HFEmbeddingModel(embed_cfg)
         return self._embedder
 
-    def _default_cache_key(self) -> str:
-        """Create a deterministic cache key from RAG config."""
-        fingerprint = {
-            "corpus": self.config.get("corpus"),
-            "corpus_template": self.config.get("corpus_template"),
-            "corpus_mappings": self.config.get("corpus_mappings"),
-            "embedding_model": self.config.get("embedding_model"),
-        }
-        raw = json.dumps(fingerprint, sort_keys=True, default=str).encode("utf-8")
-        return hashlib.sha256(raw).hexdigest()[:12]
-
-    def build_or_load_index(
+    def build_index(
         self,
         documents: List[str],
-        cache_dir: Optional[str] = None,
-        cache_key: Optional[str] = None,
     ) -> None:
-        """Build or load a FAISS index for the provided documents."""
+        """Build a FAISS index for the provided documents."""
         embedder = self._get_embedder()
-        key = cache_key or (self._default_cache_key() if cache_dir else None)
-        self._index = FAISSIndex.build_or_load(
+        self._index = FAISSIndex.build(
             documents=list(documents),
             embed_fn=embedder.embed_texts,
-            cache_dir=cache_dir,
-            cache_key=key,
         )
 
     def retrieve(self, query: str, k: int) -> List[Dict[str, Any]]:
@@ -69,15 +51,3 @@ class RAGManager:
                 }
             )
         return results
-
-    def format_context(
-        self,
-        retrieved: Iterable[Mapping[str, Any]],
-        template: str,
-        separator: str,
-    ) -> str:
-        """Format retrieved items into a single context string."""
-        rendered: List[str] = []
-        for item in retrieved:
-            rendered.append(template.format_map(item))
-        return separator.join(rendered)
