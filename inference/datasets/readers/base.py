@@ -5,8 +5,9 @@ from typing import Any, Dict, Iterable, Iterator, List, Sequence
 
 TEXT_EXTENSIONS = {".txt", ".md"}
 PDF_EXTENSIONS = {".pdf"}
+DOCX_EXTENSIONS = {".docx"}
 JSONL_EXTENSIONS = {".jsonl"}
-SUPPORTED_EXTENSIONS = set().union(TEXT_EXTENSIONS, PDF_EXTENSIONS, JSONL_EXTENSIONS)
+SUPPORTED_EXTENSIONS = set().union(TEXT_EXTENSIONS, PDF_EXTENSIONS, DOCX_EXTENSIONS, JSONL_EXTENSIONS)
 
 
 def iter_non_empty_lines(path: Path) -> Iterator[str]:

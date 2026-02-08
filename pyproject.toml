@@ -8,6 +8,7 @@ dependencies = [
     "absl-py>=2.4.0",
     "bitsandbytes>=0.49.1",
     "datasets>=4.0.0",
+    "docx2txt>=0.9",
     "evaluate>=0.4.6",
     "faiss-cpu>=1.13.2",
     "jq>=1.6.0",

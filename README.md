@@ -152,9 +152,10 @@ rag:
     model_path: "sentence-transformers/all-MiniLM-L6-v2"
 ```
 
-Supported formats: `.txt`, `.md`, `.jsonl`, `.pdf`. JSONL uses LangChain's
-`JSONLoader` (install the `jq` Python package). JSONL defaults to the `text`
-field; override with `json_content_key` or `json_jq_schema`.
+Supported formats: `.txt`, `.md`, `.jsonl`, `.pdf`, `.docx`. JSONL uses LangChain's
+`JSONLoader` (install the `jq` Python package). DOCX uses `Docx2txtLoader` (install
+the `docx2txt` Python package). JSONL defaults to the `text` field; override with
+`json_content_key` or `json_jq_schema`.
 Chunking uses LangChain's `RecursiveCharacterTextSplitter` when `chunk_size` is provided.
 
 ### Thinking delimiters

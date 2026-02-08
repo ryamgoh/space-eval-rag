@@ -8,12 +8,13 @@ from typing import Any, Dict, List, Mapping
 from inference.datasets.readers.base import (
     JSONL_EXTENSIONS,
     PDF_EXTENSIONS,
+    DOCX_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
     TEXT_EXTENSIONS,
     normalize_extensions,
 )
 
-from langchain_community.document_loaders import JSONLoader, PyPDFLoader, TextLoader
+from langchain_community.document_loaders import JSONLoader, PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
@@ -86,6 +87,8 @@ class FileCorpusLoader:
             docs = TextLoader(str(path), encoding="utf-8").load()
         elif suffix in PDF_EXTENSIONS:
             docs = PyPDFLoader(str(path)).load()
+        elif suffix in DOCX_EXTENSIONS:
+            docs = Docx2txtLoader(str(path)).load()
         else:
             docs = []
 
