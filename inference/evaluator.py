@@ -9,7 +9,7 @@ from inference.adapters import metric_adapters, task_adapters
 from inference.config.manager import ConfigManager
 from inference.logging.logger import Monitor
 from inference.model.base_model import BaseModel
-from inference.model.model import ModelFactory
+from inference.model.factory import ModelFactory
 from inference.task.aggregator import ResultAggregator
 from inference.task.processor import TaskProcessor
 from inference.util.parallel_executor import ParallelExecutor
@@ -90,7 +90,13 @@ class LLMEvaluator:
         task_adapter = task_adapters.create(adapter_name)
 
         prompts = task_adapter.build_prompts(dataset, task)
-        references = task_adapter.extract_references(dataset, task)
+        metrics_cfgs = task.get("metrics", [])
+        has_metrics = bool(metrics_cfgs)
+        has_reference_spec = "reference_field" in task or "reference_fields" in task
+        if has_metrics or (evaluation.get("save_detailed") and has_reference_spec):
+            references = task_adapter.extract_references(dataset, task)
+        else:
+            references = []
 
         generation_kwargs = task.get("generation_kwargs", {})
         log_progress = bool(evaluation.get("log_progress"))
@@ -112,12 +118,16 @@ class LLMEvaluator:
         )
 
         postprocessed_predictions = task_adapter.postprocess_predictions(completion_predictions, task)
-        metric_predictions, metric_references = task_adapter.normalize_for_metrics(
-            postprocessed_predictions, references, task
-        )
+        if has_metrics:
+            metric_predictions, metric_references = task_adapter.normalize_for_metrics(
+                postprocessed_predictions, references, task
+            )
+        else:
+            metric_predictions = list(postprocessed_predictions)
+            metric_references = list(references)
 
         metrics = {}
-        for metric_cfg in task.get("metrics", []):
+        for metric_cfg in metrics_cfgs:
             adapter = "hf"
             if isinstance(metric_cfg, dict):
                 adapter = metric_cfg.get("adapter", "hf")
@@ -158,6 +168,8 @@ class LLMEvaluator:
                     thinking, answer_from_thinking = TaskProcessor.apply_thinking_delimiters(
                         completion_predictions[idx], thinking_cfg
                     )
+                actual_raw = references[idx] if references else None
+                actual = metric_references[idx] if metric_references else None
                 detailed_examples.append(
                     {
                         "index": idx,
@@ -168,8 +180,8 @@ class LLMEvaluator:
                         "prediction_with_prompt": prediction_with_prompt,
                         "prediction_thinking": thinking,
                         "prediction_answer": answer_from_thinking,
-                        "actual_raw": references[idx],
-                        "actual": metric_references[idx],
+                        "actual_raw": actual_raw,
+                        "actual": actual,
                         "extra": extra,
                     }
                 )
