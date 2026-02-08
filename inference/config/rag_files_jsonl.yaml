@@ -56,8 +56,6 @@ tasks:
         max_length: 256
         batch_size: 32
         pooling: "mean"
-      cache_dir: "./rag_cache"
-      cache_key: "files_jsonl_v1"
 
 evaluation:
   batch_size: 2

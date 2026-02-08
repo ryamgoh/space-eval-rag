@@ -32,7 +32,7 @@ tasks:
       max_new_tokens: 8
       do_sample: false
     rag:
-      enabled: false
+      enabled: true
       context_k: 3
       context_template: "- {text}"
       context_separator: "\n"
@@ -51,8 +51,6 @@ tasks:
         max_length: 256
         batch_size: 32
         pooling: "mean"
-      cache_dir: "./rag_cache"
-      cache_key: "sciq_train_miniLM"
 
 evaluation:
   batch_size: 2
