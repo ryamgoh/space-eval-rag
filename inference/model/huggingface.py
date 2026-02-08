@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import torch
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
@@ -15,7 +15,11 @@ class HuggingFaceModel(BaseModel):
     def __init__(self, config: Dict[str, Any]):
         """Initialize tokenizer/model and cache configuration."""
         name = config["name"]
-        super().__init__(name=name, model_type="huggingface", max_batch_size=config.get("max_batch_size"))
+        super().__init__(
+            name=name,
+            model_type="huggingface",
+            max_batch_size=config.get("max_batch_size"),
+        )
         model_path = config["model_path"]
         local_dir = config.get("local_dir")
         resolved_path, cache_dir = resolve_model_path(model_path, local_dir)
@@ -92,57 +96,3 @@ class HuggingFaceModel(BaseModel):
             "all_special_tokens": list(self.tokenizer.all_special_tokens),
             "all_special_ids": list(self.tokenizer.all_special_ids),
         }
-
-
-class VLLMModel(BaseModel):
-    """Adapter for vLLM-backed models."""
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize vLLM engine and sampling parameters."""
-        name = config["name"]
-        super().__init__(name=name, model_type="vllm", max_batch_size=config.get("max_batch_size"))
-        try:
-            from vllm import LLM, SamplingParams
-        except Exception as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("vLLM is not available in this environment.") from exc
-
-        model_path = config["model_path"]
-        local_dir = config.get("local_dir")
-        resolved_path, download_dir = resolve_model_path(model_path, local_dir)
-        self.sampling_params = SamplingParams(**config.get("sampling_kwargs", {}))
-        self.llm = LLM(model=resolved_path, download_dir=download_dir)
-
-    async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
-        """Generate responses for a batch of prompts via vLLM."""
-        def _run() -> list[str]:
-            outputs = self.llm.generate(prompts, self.sampling_params)
-            return [out.outputs[0].text if out.outputs else "" for out in outputs]
-
-        return await asyncio.to_thread(_run)
-
-
-class APIModel(BaseModel):
-    """Adapter placeholder for API-backed models."""
-    def __init__(self, config: Dict[str, Any]):
-        """Store API configuration without initializing a client."""
-        name = config["name"]
-        super().__init__(name=name, model_type="api", max_batch_size=config.get("max_batch_size"))
-        self.config = config
-
-    async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:
-        """Generate responses via an external API (not implemented)."""
-        raise NotImplementedError("API model adapter is not implemented yet.")
-
-
-class ModelFactory:
-    """Factory for creating model adapters from config."""
-    @staticmethod
-    def get_model(model_config: Dict[str, Any]) -> BaseModel:
-        """Instantiate the appropriate model adapter based on config type."""
-        model_type = model_config["type"].lower()
-        if model_type == "huggingface":
-            return HuggingFaceModel(model_config)
-        if model_type == "vllm":
-            return VLLMModel(model_config)
-        if model_type == "api":
-            return APIModel(model_config)
-        raise ValueError(f"Unknown model type: {model_type}")
