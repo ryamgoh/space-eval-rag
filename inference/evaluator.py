@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from inference.adapters import metric_adapters, task_adapters
+from inference.analysis import AnalysisManager
 from inference.config.manager import ConfigManager
 from inference.logging.logger import Monitor
 from inference.model.base_model import BaseModel
@@ -20,6 +22,7 @@ class LLMEvaluator:
     def __init__(self, config_path: str):
         """Load config and initialize model/task lists."""
         self.config = ConfigManager.load_yaml(config_path)
+        self.analysis = AnalysisManager(self.config.get("analysis"))
         self.models = self._load_models()
         self.tasks = self._load_tasks()
 
@@ -61,6 +64,7 @@ class LLMEvaluator:
             str(run_dir / "summary.json"),
             format="json",
         )
+        await asyncio.to_thread(self.analysis.finalize_run, run_dir)
         # ResultAggregator.save_results(
         #     aggregated,
         #     str(output_dir / f"summary_{run_id}.json"),
@@ -98,6 +102,54 @@ class LLMEvaluator:
         else:
             references = []
 
+        model_dir_name = model.name.replace("/", "_").replace(" ", "_")
+        model_dir = run_dir / model_dir_name
+        checkpoint_batches = evaluation.get("checkpoint_batches") or 0
+        pending_rows: List[Dict[str, Any]] = []
+        if checkpoint_batches and checkpoint_batches > 0:
+            model_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint_path = model_dir / f"{task['name']}.jsonl"
+            checkpoint_path.write_text("", encoding="utf-8")
+
+            def _flush_checkpoint() -> None:
+                if not pending_rows:
+                    return
+                with checkpoint_path.open("a", encoding="utf-8") as handle:
+                    for row in pending_rows:
+                        handle.write(json.dumps(row) + "\n")
+                pending_rows.clear()
+
+            def _batch_cb(
+                batch_index: int,
+                total_batches: int,
+                batch_start: int,
+                batch_prompts: List[str],
+                batch_outputs: List[str],
+                batch_raw: List[str] | None,
+            ) -> None:
+                raw_list = batch_raw if batch_raw is not None else list(batch_outputs)
+                parsed = task_adapter.postprocess_predictions(batch_outputs, task)
+                for offset, (prompt, raw, parsed_text) in enumerate(
+                    zip(batch_prompts, raw_list, parsed)
+                ):
+                    idx = batch_start + offset
+                    actual_raw = references[idx] if idx < len(references) else None
+                    pending_rows.append(
+                        {
+                            "model": model.name,
+                            "task": task["name"],
+                            "index": idx,
+                            "prompt": prompt,
+                            "prediction_raw": raw,
+                            "prediction_parsed": parsed_text,
+                            "actual_raw": actual_raw,
+                        }
+                    )
+                if batch_index == total_batches or batch_index % checkpoint_batches == 0:
+                    _flush_checkpoint()
+        else:
+            _batch_cb = None
+
         generation_kwargs = task.get("generation_kwargs", {})
         log_progress = bool(evaluation.get("log_progress"))
         progress_every = evaluation.get("progress_every_batches", 1)
@@ -112,6 +164,7 @@ class LLMEvaluator:
             prompts,
             task,
             batch_size=evaluation["batch_size"],
+            batch_cb=_batch_cb,
             progress_cb=_progress_cb if log_progress else None,
             progress_every=progress_every,
             **generation_kwargs,
@@ -187,12 +240,11 @@ class LLMEvaluator:
                 )
             result["examples"] = detailed_examples
 
-        model_dir_name = model.name.replace("/", "_").replace(" ", "_")
-        model_dir = run_dir / model_dir_name
         model_dir.mkdir(parents=True, exist_ok=True)
         ResultAggregator.save_results(
             {"runs": [result]},
             str(model_dir / f"{task['name']}.json"),
             format="json",
         )
+        await asyncio.to_thread(self.analysis.update_incremental, run_dir)
         return result

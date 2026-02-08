@@ -55,6 +55,7 @@ class BaseModel(ABC):
         # Optional callback for per-batch progress reporting.
         progress_cb = kwargs.pop("progress_cb", None)
         progress_every = kwargs.pop("progress_every", 1)
+        batch_cb = kwargs.pop("batch_cb", None)
         if isinstance(progress_every, int) and progress_every < 1:
             progress_every = 1
         prompts_list = list(prompts)
@@ -73,6 +74,15 @@ class BaseModel(ABC):
                 raw_supported = False
             if raw_supported:
                 raw_outputs.extend(batch_raw)
+            if batch_cb:
+                batch_cb(
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                    batch_start=start,
+                    batch_prompts=batch,
+                    batch_outputs=batch_outputs,
+                    batch_raw=batch_raw,
+                )
             if progress_cb and (batch_index == total_batches or batch_index % progress_every == 0):
                 progress_cb(batch_index, total_batches)
         if not raw_supported:

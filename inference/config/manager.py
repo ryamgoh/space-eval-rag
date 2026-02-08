@@ -96,10 +96,18 @@ class ConfigManager:
         evaluation.setdefault("prediction_sample_size", 5)
         evaluation.setdefault("save_detailed", False)
         evaluation.setdefault("max_detailed_examples", 50)
+        evaluation.setdefault("checkpoint_batches", 0)
         # Optional progress logging defaults.
         evaluation.setdefault("log_progress", False)
         evaluation.setdefault("progress_every_batches", 1)
         evaluation.setdefault("log_level", "INFO")
+        analysis = config.setdefault("analysis", {})
+        if isinstance(analysis, dict):
+            analysis.setdefault("enabled", False)
+            analysis.setdefault("timing", "final")
+            analysis.setdefault("plots", "core")
+            analysis.setdefault("output_dir", None)
+            analysis.setdefault("image_format", "png")
         config.setdefault("datasets_dir", "datasets")
         models_dir = config.setdefault("models_dir", "models")
         for model in config.get("models", []):
