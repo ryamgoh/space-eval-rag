@@ -5,12 +5,12 @@ Minimal async pipeline to evaluate multiple LLMs across multiple tasks with plug
 ### Flow (current)
 
 1. `main.py` loads a YAML config and instantiates `LLMEvaluator`.
-2. `ConfigManager` validates config and fills defaults (batch size, concurrency, output dir, cache dirs).
-3. `ModelFactory` creates model adapters (Hugging Face or vLLM; API stub exists).
+2. `ConfigManager` validates config and fills defaults (batch size, concurrency, output dir).
+3. `ModelFactory` creates model adapters (Hugging Face or vLLM; API stub exists). Adapters live in `inference/model/`.
 4. For each model × task pair, `LLMEvaluator` schedules an async evaluation job.
 5. Each job:
    - loads the dataset (`TaskProcessor.load_dataset`)
-   - formats prompts with `prompt_template(s)` + `input_mappings` (or `fields`)
+   - formats prompts with `prompt_template` + `input_mappings`
    - extracts references from `reference_field(s)` when provided
    - runs `model.batch_generate(...)` in batches
    - computes metrics via `evaluate.load(...)` or a registered custom metric
@@ -51,7 +51,7 @@ Notes:
 ### Config highlights
 
 - `models`: list of model configs (`type: huggingface | vllm | api`)
-- `tasks`: list of tasks with dataset, prompt template, mappings, and metrics
+- `tasks`: list of tasks with dataset, `prompt_template`, `input_mappings`, and metrics
 - `evaluation`: batch size, max concurrency, output directory, sample size, output detail controls, and optional per-batch logging (`log_progress`, `progress_every_batches`)
 - `datasets_dir`: where HF datasets are cached (default: `./datasets`)
 - `models_dir`: base directory for model downloads (default: `./models`)
@@ -62,7 +62,7 @@ RAG can be enabled per task, so a single config can mix tasks that use retrieval
 ### Text generation adapter
 
 The default `text_generation` adapter (also available as `generic`) supports:
-- prompt templating from dataset fields
+- prompt templating from dataset fields via `input_mappings` and `prompt_template`
 - reference extraction
 - optional post-processing (`prediction_postprocess`)
 - optional classification normalization (`label_map`)
@@ -120,16 +120,13 @@ tasks:
         max_length: 256
         batch_size: 32
         pooling: "mean"
-      cache_dir: "./rag_cache"
-      cache_key: "sciq_train_miniLM"
 ```
 
 Notes:
 - `{context}` must appear in the `prompt_template` when RAG is enabled.
 - `rag.query_template` defaults to the task's `prompt_template` with `{context}` removed.
-- If `rag.cache_dir` is set, the FAISS index + metadata is cached under `rag.cache_key`.
 
-#### File corpus loader
+#### File corpus loader (LangChain)
 
 You can point `rag.corpus` at local files directly:
 
@@ -146,6 +143,8 @@ rag:
     extensions: ["txt", "md", "jsonl", "pdf"]
     chunk_size: 1200
     chunk_overlap: 200
+    json_content_key: "text"
+    # json_jq_schema: ".text"
   corpus_template: "{text}"
   corpus_mappings:
     text: "text"
@@ -153,8 +152,10 @@ rag:
     model_path: "sentence-transformers/all-MiniLM-L6-v2"
 ```
 
-Supported formats: `.txt`, `.md`, `.jsonl`, `.pdf`. JSONL files are read one object per line.
-Chunking is optional and happens on the `text` field when `chunk_size` is provided.
+Supported formats: `.txt`, `.md`, `.jsonl`, `.pdf`. JSONL uses LangChain's
+`JSONLoader` (install the `jq` Python package). JSONL defaults to the `text`
+field; override with `json_content_key` or `json_jq_schema`.
+Chunking uses LangChain's `RecursiveCharacterTextSplitter` when `chunk_size` is provided.
 
 ### Thinking delimiters
 
@@ -240,4 +241,5 @@ becomes:
 ### Notes
 
 - Metrics are optional; set `metrics: []` to skip scoring.
+- When `metrics: []`, reference fields are optional unless `save_detailed` is enabled.
 - API models are stubbed; vLLM requires its dependency installed.
