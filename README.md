@@ -42,6 +42,27 @@ Detailed examples (when enabled) include:
 `prediction_raw`, `prediction_parsed`, `prediction`, `prediction_with_prompt`,
 `prediction_thinking`, `prediction_answer`, `actual_raw`, `actual`.
 
+### Analysis plots
+
+You can generate seaborn/matplotlib plots during or after a run by enabling the `analysis` block.
+Plots are written under `runs/<run_id>/analysis/` by default.
+
+Example:
+
+```yaml
+analysis:
+  enabled: true
+  timing: "incremental"   # incremental | final | incremental+final
+  plots: "core"           # minimal | core | extended
+  image_format: "both"    # png | svg | both
+```
+
+To compare existing runs after the fact:
+
+```bash
+python -m inference.analysis --runs runs/20260207_121250 runs/20260207_134658 --out runs/compare/20260208
+```
+
 Notes:
 - `prediction_raw` preserves special tokens (e.g., `<pad>`, `</s>`).
 - `prediction` and `prediction_parsed` are cleaned of special tokens; for causal models they are the completion only.
