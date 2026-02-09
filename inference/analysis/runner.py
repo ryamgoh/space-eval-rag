@@ -103,6 +103,13 @@ class AnalysisManager:
                 plots.plot_metric_by_model(df, metric, output_dir, formats)
             if self.config.plot_set in {"core", "extended"}:
                 plots.plot_metric_by_task(df, metric, output_dir, formats)
+                plots.plot_metric_overview(
+                    df,
+                    metric,
+                    output_dir,
+                    formats,
+                    include_heatmap=self.config.plot_set == "extended",
+                )
             if self.config.plot_set == "extended":
                 plots.plot_metric_heatmap(df, metric, output_dir, formats)
         if self.config.plot_set in {"core", "extended"}:
