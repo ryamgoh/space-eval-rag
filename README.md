@@ -225,9 +225,22 @@ When `constrained_output: true`:
 - No invalid outputs (e.g., "World/serious/serious/...")
 - Works with HuggingFace models only (vLLM/API not yet supported)
 
-**Two-phase generation** (thinking/reasoning models like DeepSeek-R1):
+**Two-phase generation** (thinking/reasoning models):
+
+Thinking models (e.g., DeepSeek-R1, Qwen-Thinking) use two-phase generation automatically when `constrained_output: true` is enabled. The model's `is_thinking_model` flag determines this.
 
 ```yaml
+models:
+  - name: "qwen-thinking"
+    type: "huggingface"
+    model_path: "Qwen/Qwen3-4B-Thinking-2507"
+    # is_thinking_model: auto-detected from model path (contains "thinking" or "reasoning")
+    
+  - name: "deepseek-r1"
+    type: "huggingface"
+    model_path: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+    is_thinking_model: true  # Explicitly set if not auto-detected
+
 tasks:
   - name: "agnews-thinking"
     choices: ["World", "Sports", "Business", "Sci/Tech"]
@@ -235,16 +248,16 @@ tasks:
     thinking_delimiters:
       start: "<think"
       end: "</think"
-    constrained_output:
-      enabled: true
-      thinking: true
+    constrained_output: true  # Two-phase if model.is_thinking_model=True
 ```
 
-Two-phase flow:
-1. **Phase 1**: Model generates reasoning freely (e.g., `<think>Let me analyze...</think>`)
-2. **Phase 2**: Constrained generation forces a valid choice (e.g., `<answer>World`)
+Two-phase flow (when `model.is_thinking_model=True`):
+1. **Phase 1**: Model generates reasoning freely (e.g., `<<think`Let me analyze...`<\think>`)
+2. **Phase 2**: Constrained generation forces a valid choice
 
-**Note:** `thinking_delimiters` is specified at task level (not inside `constrained_output`) to allow sharing with other features like `strip_from_prediction`.
+**Auto-detection:** Models with "thinking" or "reasoning" in their path are automatically flagged as thinking models. Override with `is_thinking_model: true/false` in model config.
+
+**Note:** `thinking_delimiters` is specified at task level to allow sharing with other features like `strip_from_prediction`.
 
 **Validation:**
 - `constrained_output: true` requires non-empty `choices` list (raises `ValueError` if missing)
