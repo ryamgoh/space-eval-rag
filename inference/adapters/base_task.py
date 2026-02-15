@@ -278,6 +278,8 @@ class BaseTaskAdapter(ABC):
         thinking_outputs = await model.batch_generate_with_prompt(
             thinking_prompts,
             batch_size=gen_config.batch_size,
+            progress_cb=gen_config.progress_cb,
+            progress_every=gen_config.progress_every,
             **(gen_config.generation_kwargs or {}),
         )
         thinking_texts, _ = thinking_outputs
