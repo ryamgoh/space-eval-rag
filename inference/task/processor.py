@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import evaluate
@@ -10,6 +11,7 @@ from datasets import Dataset, load_dataset
 
 class MetricRegistry:
     """Registry for custom metric functions."""
+
     _registry: Dict[str, Callable[..., Dict[str, float]]] = {}
 
     @classmethod
@@ -25,6 +27,7 @@ class MetricRegistry:
 
 class TaskProcessor:
     """Utilities for dataset loading, templating, and metric computation."""
+
     @staticmethod
     def load_dataset(
         dataset_config: Any, split: str | None = None, cache_dir: Optional[str] = None
@@ -33,7 +36,9 @@ class TaskProcessor:
         if isinstance(dataset_config, str):
             if cache_dir:
                 os.makedirs(cache_dir, exist_ok=True)
-            return load_dataset(dataset_config, split=split or "validation", cache_dir=cache_dir)
+            return load_dataset(
+                dataset_config, split=split or "validation", cache_dir=cache_dir
+            )
 
         if not isinstance(dataset_config, dict):
             raise ValueError("dataset must be a string or dict.")
@@ -72,7 +77,9 @@ class TaskProcessor:
         )
 
     @staticmethod
-    def apply_template(dataset: Dataset, template: str, mappings: Mapping[str, str]) -> List[str]:
+    def apply_template(
+        dataset: Dataset, template: str, mappings: Mapping[str, str]
+    ) -> List[str]:
         """Render prompt templates using dataset rows."""
         prompts: List[str] = []
         for row in dataset:
@@ -87,19 +94,26 @@ class TaskProcessor:
         extras: Mapping[str, Any] | None = None,
     ) -> str:
         """Render a single template from a row with optional extra fields."""
-        values = {key: TaskProcessor.resolve_field(row, field) for key, field in mappings.items()}
+        values = {
+            key: TaskProcessor.resolve_field(row, field)
+            for key, field in mappings.items()
+        }
         if extras:
             values.update(extras)
         return template.format_map(values)
 
     @staticmethod
-    def extract_references(dataset: Dataset, task_config: Mapping[str, Any]) -> List[Any]:
+    def extract_references(
+        dataset: Dataset, task_config: Mapping[str, Any]
+    ) -> List[Any]:
         """Extract reference labels/targets from dataset rows."""
         ref_field = task_config.get("reference_field")
         if isinstance(ref_field, str):
             return [TaskProcessor.resolve_field(row, ref_field) for row in dataset]
         ref_fields = task_config.get("reference_fields")
-        if isinstance(ref_fields, Sequence) and not isinstance(ref_fields, (str, bytes)):
+        if isinstance(ref_fields, Sequence) and not isinstance(
+            ref_fields, (str, bytes)
+        ):
             return [
                 {field: TaskProcessor.resolve_field(row, field) for field in ref_fields}
                 for row in dataset
@@ -120,7 +134,9 @@ class TaskProcessor:
                 try:
                     index = int(part)
                 except ValueError as exc:
-                    raise KeyError(f"Expected list index in path '{path}', got '{part}'.") from exc
+                    raise KeyError(
+                        f"Expected list index in path '{path}', got '{part}'."
+                    ) from exc
                 if index >= len(current) or index < 0:
                     raise IndexError(f"Index {index} out of range for path '{path}'.")
                 current = current[index]
@@ -129,7 +145,60 @@ class TaskProcessor:
         return current
 
     @staticmethod
-    def postprocess_predictions(predictions: List[str], task_config: Mapping[str, Any]) -> List[str]:
+    def extract_choice(
+        text: str,
+        choices: Sequence[str],
+        default: str,
+    ) -> str:
+        """Extract a choice from text using regex patterns.
+
+        Tries patterns in order:
+        1. <answer>X</answer> (primary)
+        2. X at end of text (fallback)
+        3. "answer is X" / "option: X" patterns (fallback)
+
+        Args:
+            text: Text to extract choice from
+            choices: Valid choices (e.g., ["A", "B", "C", "D"])
+            default: Fallback when no choice found
+
+        Returns:
+            Extracted choice (preserves original case from choices list)
+
+        Raises:
+            ValueError: If choices is empty
+        """
+        if not choices:
+            raise ValueError("Cannot extract choice with empty choices list")
+        choice_class = "|".join(re.escape(c) for c in choices)
+        choice_map = {c.upper(): c for c in choices}
+
+        primary_pattern = re.compile(
+            rf"<answer>\s*({choice_class})\s*</answer>",
+            re.IGNORECASE,
+        )
+        match = primary_pattern.search(text)
+        if match:
+            return choice_map.get(match.group(1).upper(), default)
+
+        fallback_patterns = [
+            re.compile(rf"\b({choice_class})\b\s*$", re.IGNORECASE),
+            re.compile(
+                rf"(?:answer|choice|option)\s*(?:is)?\s*[:=]?\s*({choice_class})",
+                re.IGNORECASE,
+            ),
+        ]
+        for pattern in fallback_patterns:
+            match = pattern.search(text)
+            if match:
+                return choice_map.get(match.group(1).upper(), default)
+
+        return default
+
+    @staticmethod
+    def postprocess_predictions(
+        predictions: List[str], task_config: Mapping[str, Any]
+    ) -> List[str]:
         """Apply simple string post-processing rules to predictions."""
         postprocess = task_config.get("prediction_postprocess") or {}
         thinking_cfg = task_config.get("thinking_delimiters") or {}
@@ -139,7 +208,6 @@ class TaskProcessor:
         for pred in predictions:
             text = str(pred)
             if strip_thinking:
-                # Remove thinking segment before other postprocessing steps.
                 _, text = TaskProcessor.apply_thinking_delimiters(text, thinking_cfg)
             after = postprocess.get("after")
             before = postprocess.get("before")
@@ -148,6 +216,15 @@ class TaskProcessor:
             if before and before in text:
                 text = text.split(before)[0]
             processed.append(text.strip())
+
+        choices = task_config.get("choices")
+        if choices:
+            default = task_config.get("default_choice", choices[0])
+            processed = [
+                TaskProcessor.extract_choice(text, choices, default)
+                for text in processed
+            ]
+
         return processed
 
     @staticmethod
@@ -275,13 +352,19 @@ class TaskProcessor:
 
             custom = MetricRegistry.get(name)
             if custom:
-                metric_result = custom(predictions=predictions, references=references, **metric_args)
+                metric_result = custom(
+                    predictions=predictions, references=references, **metric_args
+                )
             else:
                 try:
                     metric = evaluate.load(name)
-                    metric_result = metric.compute(predictions=predictions, references=references, **metric_args)
+                    metric_result = metric.compute(
+                        predictions=predictions, references=references, **metric_args
+                    )
                 except Exception as exc:  # pragma: no cover - fallback
-                    raise ValueError(f"Failed to compute metric '{name}': {exc}") from exc
+                    raise ValueError(
+                        f"Failed to compute metric '{name}': {exc}"
+                    ) from exc
 
             for key, value in metric_result.items():
                 results[f"{name}:{key}"] = value
