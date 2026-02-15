@@ -7,7 +7,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 class BaseModel(ABC):
     """Abstract base class for model adapters."""
-    def __init__(self, name: str, model_type: str, max_batch_size: Optional[int] = None):
+
+    def __init__(
+        self, name: str, model_type: str, max_batch_size: Optional[int] = None
+    ):
         """Initialize basic model metadata."""
         self.name = name
         self.model_type = model_type
@@ -66,13 +69,17 @@ class BaseModel(ABC):
         outputs: List[str] = []
         raw_outputs: List[str] = []
         raw_supported = True
-        for batch_index, start in enumerate(range(0, len(prompts_list), effective_batch_size), start=1):
+        for batch_index, start in enumerate(
+            range(0, len(prompts_list), effective_batch_size), start=1
+        ):
             batch = prompts_list[start : start + effective_batch_size]
-            batch_outputs, batch_raw = await self.generate_batch_with_prompt(batch, **kwargs)
+            batch_outputs, batch_raw = await self.generate_batch_with_prompt(
+                batch, **kwargs
+            )
             outputs.extend(batch_outputs)
             if batch_raw is None:
                 raw_supported = False
-            if raw_supported:
+            if raw_supported and batch_raw is not None:
                 raw_outputs.extend(batch_raw)
             if batch_cb:
                 batch_cb(
@@ -83,11 +90,38 @@ class BaseModel(ABC):
                     batch_outputs=batch_outputs,
                     batch_raw=batch_raw,
                 )
-            if progress_cb and (batch_index == total_batches or batch_index % progress_every == 0):
+            if progress_cb and (
+                batch_index == total_batches or batch_index % progress_every == 0
+            ):
                 progress_cb(batch_index, total_batches)
         if not raw_supported:
             return outputs, None
         return outputs, raw_outputs
+
+    @property
+    def supports_constrained_generation(self) -> bool:
+        """Whether this model supports constrained output generation."""
+        return False
+
+    async def generate_constrained(
+        self,
+        prompts: List[str],
+        pattern: str,
+        **kwargs,
+    ) -> List[str]:
+        """Generate with regex-constrained output.
+
+        Override in subclasses that support constrained generation (e.g., HuggingFace with Outlines).
+
+        Args:
+            prompts: Prompts to generate from
+            pattern: Regex pattern for constrained generation
+            **kwargs: Additional generation kwargs
+
+        Returns:
+            List of generated outputs matching the pattern
+        """
+        raise NotImplementedError("Constrained generation not supported by this model")
 
     def get_special_tokens(self) -> Optional[Dict[str, Any]]:
         """Return special token metadata if the backend exposes it."""
