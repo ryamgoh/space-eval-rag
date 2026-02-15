@@ -19,6 +19,7 @@ dependencies = [
     "langchain-text-splitters>=0.3.0",
     "matplotlib>=3.10.8",
     "nltk>=3.9.2",
+    "outlines>=1.2.9",
     "pandas>=2.3.3",
     "pandas-stubs>=3.0.0.260204",
     "pypdf>=4.3.1",
