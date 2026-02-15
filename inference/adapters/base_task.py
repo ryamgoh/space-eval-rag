@@ -228,12 +228,16 @@ class BaseTaskAdapter(ABC):
         # Simple constrained generation
         if constrained_cfg.enabled and constrained_cfg.choices:
             pattern = self._build_constrained_pattern(constrained_cfg.choices)
-            predictions = await model.generate_constrained(
-                list(prompts),
+            predictions, raw_predictions = await model.batch_generate_constrained(
+                prompts,
                 pattern,
+                batch_size=gen_config.batch_size,
+                batch_cb=gen_config.batch_cb,
+                progress_cb=gen_config.progress_cb,
+                progress_every=gen_config.progress_every,
                 **(gen_config.generation_kwargs or {}),
             )
-            return predictions, predictions, None
+            return predictions, raw_predictions, None
 
         # Standard unconstrained generation
         predictions, raw_predictions = await model.batch_generate_with_prompt(

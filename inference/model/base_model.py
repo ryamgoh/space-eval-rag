@@ -134,6 +134,59 @@ class BaseModel(ABC):
         """
         raise NotImplementedError("Constrained generation not supported by this model")
 
+    async def batch_generate_constrained(
+        self,
+        prompts: Iterable[str],
+        pattern: str,
+        batch_size: Optional[int] = None,
+        batch_cb: Any = None,
+        progress_cb: Any = None,
+        progress_every: int = 1,
+        **kwargs,
+    ) -> tuple[List[str], List[str] | None]:
+        """Generate constrained outputs with batching and callbacks.
+
+        Args:
+            prompts: Prompts to generate from
+            pattern: Regex pattern for constrained generation
+            batch_size: Number of prompts per batch
+            batch_cb: Callback for batch completion (for checkpointing)
+            progress_cb: Callback for progress updates
+            progress_every: Report progress every N batches
+            **kwargs: Additional generation kwargs
+
+        Returns:
+            Tuple of (outputs, raw_outputs)
+        """
+        if isinstance(progress_every, int) and progress_every < 1:
+            progress_every = 1
+        prompts_list = list(prompts)
+        if not prompts_list:
+            return [], []
+        effective_batch_size = batch_size or self.max_batch_size or len(prompts_list)
+        total_batches = math.ceil(len(prompts_list) / effective_batch_size)
+        outputs: List[str] = []
+        for batch_index, start in enumerate(
+            range(0, len(prompts_list), effective_batch_size), start=1
+        ):
+            batch = prompts_list[start : start + effective_batch_size]
+            batch_outputs = await self.generate_constrained(batch, pattern, **kwargs)
+            outputs.extend(batch_outputs)
+            if batch_cb:
+                batch_cb(
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                    batch_start=start,
+                    batch_prompts=batch,
+                    batch_outputs=batch_outputs,
+                    batch_raw=batch_outputs,
+                )
+            if progress_cb and (
+                batch_index == total_batches or batch_index % progress_every == 0
+            ):
+                progress_cb(batch_index, total_batches)
+        return outputs, outputs
+
     def get_special_tokens(self) -> Optional[Dict[str, Any]]:
         """Return special token metadata if the backend exposes it."""
         return None
