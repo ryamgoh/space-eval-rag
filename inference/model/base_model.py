@@ -15,6 +15,7 @@ class BaseModel(ABC):
         self.name = name
         self.model_type = model_type
         self.max_batch_size = max_batch_size
+        self._is_thinking_model = False
 
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate a single completion for a prompt."""
@@ -102,6 +103,16 @@ class BaseModel(ABC):
     def supports_constrained_generation(self) -> bool:
         """Whether this model supports constrained output generation."""
         return False
+
+    @property
+    def is_thinking_model(self) -> bool:
+        """Whether this model is a thinking/reasoning model."""
+        return self._is_thinking_model
+
+    @is_thinking_model.setter
+    def is_thinking_model(self, value: bool):
+        """Set whether this model is a thinking/reasoning model."""
+        self._is_thinking_model = value
 
     async def generate_constrained(
         self,

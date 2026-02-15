@@ -65,6 +65,16 @@ class HuggingFaceModel(BaseModel):
         self._outlines_model = None
         self._outlines_generator = None
 
+        # Set thinking model flag from config or auto-detect from model path
+        is_thinking = config.get("is_thinking_model", None)
+        if is_thinking is None:
+            # Auto-detect from model path
+            model_path_lower = model_path.lower()
+            is_thinking = (
+                "thinking" in model_path_lower or "reasoning" in model_path_lower
+            )
+        self._is_thinking_model = bool(is_thinking)
+
     @property
     def supports_constrained_generation(self) -> bool:
         """HuggingFace models support constrained generation via Outlines."""

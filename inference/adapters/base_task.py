@@ -52,29 +52,29 @@ class ConstrainedOutputConfig:
         constrained_output: true
         choices: ["A", "B", "C", "D"]
 
-    Nested format (for thinking models):
+    Nested format:
         constrained_output:
           enabled: true
-          thinking: true
         choices: ["A", "B", "C", "D"]
         thinking_delimiters:
           start: "<think"
           end: "</think"
 
-    Note: thinking_delimiters should be specified at task level (not inside
-    constrained_output) to allow sharing with other task features like
-    strip_from_prediction.
+    Note:
+    - thinking_delimiters should be specified at task level (not inside
+      constrained_output) to allow sharing with other task features like
+      strip_from_prediction.
+    - Two-phase generation (for thinking models) is determined by the model's
+      is_thinking_model property, not by task config.
 
     Attributes:
         enabled: Whether to use constrained generation
-        thinking: Whether to use two-phase generation for thinking models
         choices: Valid choices for extraction/constraining
         default_choice: Fallback when extraction fails
         thinking_delimiters: Optional delimiters for thinking phase (from task level)
     """
 
     enabled: bool = False
-    thinking: bool = False
     choices: Sequence[str] = field(default_factory=list)
     default_choice: Optional[str] = None
     thinking_delimiters: Optional[Mapping[str, str]] = None
@@ -98,7 +98,6 @@ class ConstrainedOutputConfig:
         if isinstance(raw, Mapping):
             return cls(
                 enabled=raw.get("enabled", False),
-                thinking=raw.get("thinking", False),
                 choices=task_cfg.get("choices", []),
                 default_choice=task_cfg.get("default_choice")
                 or raw.get("default_choice"),
@@ -175,8 +174,12 @@ class BaseTaskAdapter(ABC):
 
         Supports three modes:
         1. Standard generation (constrained_output: false)
-        2. Simple constrained (constrained_output: true)
-        3. Two-phase for thinking models (constrained_output: {enabled: true, thinking: true})
+        2. Simple constrained (constrained_output: true) - for instruction-tuned models
+        3. Two-phase constrained (constrained_output: true + model.is_thinking_model=True)
+
+        The two-phase generation is automatically used when:
+        - constrained_output is enabled
+        - The model has is_thinking_model=True (set via config or auto-detected)
 
         Raises:
             ValueError: If constrained_output is enabled but choices is empty
@@ -215,12 +218,9 @@ class BaseTaskAdapter(ABC):
                 f"Either disable constrained_output or use a HuggingFace model.{hint}"
             )
 
-        # Two-phase generation for thinking models
-        if (
-            constrained_cfg.enabled
-            and constrained_cfg.thinking
-            and constrained_cfg.choices
-        ):
+        # Two-phase generation for thinking models (model-level decision)
+        is_thinking_model = getattr(model, "is_thinking_model", False)
+        if constrained_cfg.enabled and is_thinking_model and constrained_cfg.choices:
             return await self._generate_two_phase(
                 model, prompts, constrained_cfg, gen_config
             )
