@@ -69,12 +69,25 @@ class TaskProcessor:
         effective_cache_dir = dataset_config.get("cache_dir", cache_dir)
         if effective_cache_dir:
             os.makedirs(effective_cache_dir, exist_ok=True)
-        return load_dataset(
+        ds = load_dataset(
             dataset_name,
             split=dataset_config.get("split", split or "validation"),
             cache_dir=effective_cache_dir,
             **dataset_config.get("kwargs", {}),
         )
+
+        # Apply filter if specified
+        filter_cfg = dataset_config.get("filter")
+        if filter_cfg:
+            column = filter_cfg.get("column")
+            pattern = filter_cfg.get("pattern")
+            if column and pattern:
+                import re
+
+                regex = re.compile(pattern)
+                ds = ds.filter(lambda x: bool(regex.search(str(x.get(column, "")))))
+
+        return ds
 
     @staticmethod
     def apply_template(
