@@ -275,13 +275,20 @@ class BaseTaskAdapter(ABC):
 
         thinking_prompts = [f"{prompt}\n{thinking_start}" for prompt in prompts]
 
+        thinking_gen_kwargs = dict(gen_config.generation_kwargs or {})
+        existing_stops = thinking_gen_kwargs.get("stop_strings", [])
+        if not isinstance(existing_stops, list):
+            existing_stops = list(existing_stops)
+        if thinking_end and thinking_end not in existing_stops:
+            thinking_gen_kwargs["stop_strings"] = existing_stops + [thinking_end]
+
         thinking_outputs = await model.batch_generate_with_prompt(
             thinking_prompts,
             batch_size=gen_config.batch_size,
             batch_cb=gen_config.batch_cb,
             progress_cb=gen_config.progress_cb,
             progress_every=gen_config.progress_every,
-            **(gen_config.generation_kwargs or {}),
+            **thinking_gen_kwargs,
         )
         thinking_texts, _ = thinking_outputs
 

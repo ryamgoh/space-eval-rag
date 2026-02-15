@@ -120,7 +120,12 @@ class HuggingFaceModel(BaseModel):
             if self.input_device is not None:
                 inputs = inputs.to(self.input_device)
             with torch.inference_mode():
-                outputs = self.model.generate(**inputs, **gen_kwargs)
+                gen_args = dict(gen_kwargs)
+                gen_args.setdefault("eos_token_id", self.tokenizer.eos_token_id)
+                gen_args.setdefault("pad_token_id", self.tokenizer.eos_token_id)
+                if gen_args.get("stop_strings"):
+                    gen_args["tokenizer"] = self.tokenizer
+                outputs = self.model.generate(**inputs, **gen_args)
             sequences = outputs.sequences if hasattr(outputs, "sequences") else outputs
             raw_full = self.tokenizer.batch_decode(sequences, skip_special_tokens=False)
             clean_full = self.tokenizer.batch_decode(
