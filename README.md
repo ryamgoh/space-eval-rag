@@ -89,6 +89,7 @@ The default `text_generation` adapter (also available as `generic`) supports:
 - optional classification normalization (`label_map`)
 - optional thinking delimiter extraction (`thinking_delimiters`)
 - optional RAG context injection (`rag`)
+- optional constrained output generation (`constrained_output`)
 
 Additional adapters are available for clarity when configuring tasks:
 - `classification`
@@ -203,6 +204,51 @@ thinking_delimiters:
 ```
 
 For end-only delimiters, the split uses the last occurrence of `end`.
+
+### Constrained output generation
+
+For classification tasks with fixed answer choices, you can enable constrained generation to guarantee valid outputs. Uses [Outlines](https://github.com/dottxt-ai/outlines) for HuggingFace models.
+
+**Simple constrained generation** (instruction-tuned models):
+
+```yaml
+tasks:
+  - name: "agnews-classify"
+    choices: ["World", "Sports", "Business", "Sci/Tech"]
+    default_choice: "World"
+    constrained_output: true
+    label_map: ["World", "Sports", "Business", "Sci/Tech"]
+```
+
+When `constrained_output: true`:
+- Model outputs are forced to match one of the choices
+- No invalid outputs (e.g., "World/serious/serious/...")
+- Works with HuggingFace models only (vLLM/API not yet supported)
+
+**Two-phase generation** (thinking/reasoning models like DeepSeek-R1):
+
+```yaml
+tasks:
+  - name: "agnews-thinking"
+    choices: ["World", "Sports", "Business", "Sci/Tech"]
+    default_choice: "World"
+    thinking_delimiters:
+      start: "<think"
+      end: "</think"
+    constrained_output:
+      enabled: true
+      thinking: true
+```
+
+Two-phase flow:
+1. **Phase 1**: Model generates reasoning freely (e.g., `<think>Let me analyze...</think>`)
+2. **Phase 2**: Constrained generation forces a valid choice (e.g., `<answer>World`)
+
+**Note:** `thinking_delimiters` is specified at task level (not inside `constrained_output`) to allow sharing with other features like `strip_from_prediction`.
+
+**Validation:**
+- `constrained_output: true` requires non-empty `choices` list (raises `ValueError` if missing)
+- Only HuggingFace models support constrained generation (raises `RuntimeError` for vLLM/API models)
 
 ### Device placement (HF vs vLLM)
 
