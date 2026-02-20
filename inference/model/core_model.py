@@ -5,7 +5,7 @@ import math
 from typing import Any, Dict, Iterable, List, Optional
 
 
-class BaseModel(ABC):
+class CoreModelInterface(ABC):
     """Abstract base class for model adapters."""
 
     def __init__(
