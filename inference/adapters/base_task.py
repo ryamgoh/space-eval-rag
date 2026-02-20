@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from datasets import Dataset
+from pydantic import BaseModel as PydanticModel, Field, model_validator
 
-from inference.model.base_model import BaseModel
+from inference.model.core_model import CoreModelInterface
+from inference.config.models import TaskConfig
 
 
-@dataclass
-class GenerationConfig:
+class GenerationConfig(PydanticModel):
     """Configuration for text generation.
 
     Attributes:
@@ -26,7 +26,7 @@ class GenerationConfig:
     batch_cb: Any | None = None
     progress_cb: Any | None = None
     progress_every: int = 1
-    generation_kwargs: dict | None = None
+    generation_kwargs: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_kwargs(cls, batch_size: int = 1, **kwargs) -> "GenerationConfig":
@@ -42,69 +42,66 @@ class GenerationConfig:
         )
 
 
-@dataclass
-class ConstrainedOutputConfig:
+class ConstrainedOutputConfig(PydanticModel):
     """Configuration for constrained output generation.
 
-    Supports both simple and nested config formats:
+        Supports both simple and nested config formats:
 
-    Simple format:
-        constrained_output: true
-        choices: ["A", "B", "C", "D"]
+        Simple format:
+            constrained_output: true
+            choices: ["A", "B", "C", "D"]
 
-    Nested format:
-        constrained_output:
-          enabled: true
-        choices: ["A", "B", "C", "D"]
-        thinking_delimiters:
-          start: "<think"
-          end: "</think"
+        Nested format:
+            constrained_output:
+              enabled: true
+            choices: ["A", "B", "C", "D"]
+            thinking_delimiters:
+              start: "
+    <think"
+              end: "</think"
 
-    Note:
-    - thinking_delimiters should be specified at task level (not inside
-      constrained_output) to allow sharing with other task features like
-      strip_from_prediction.
-    - Two-phase generation (for thinking models) is determined by the model's
-      is_thinking_model property, not by task config.
+        Note:
+        - thinking_delimiters should be specified at task level (not inside
+          constrained_output) to allow sharing with other task features like
+          strip_from_prediction.
+        - Two-phase generation (for thinking models) is determined by the model's
+          is_thinking_model property, not by task config.
 
-    Attributes:
-        enabled: Whether to use constrained generation
-        choices: Valid choices for extraction/constraining
-        default_choice: Fallback when extraction fails
-        thinking_delimiters: Optional delimiters for thinking phase (from task level)
+        Attributes:
+            enabled: Whether to use constrained generation
+            choices: Valid choices for extraction/constraining
+            default_choice: Fallback when extraction fails
+            thinking_delimiters: Optional delimiters for thinking phase (from task level)
     """
 
     enabled: bool = False
-    choices: Sequence[str] = field(default_factory=list)
+    choices: Sequence[str] = Field(default_factory=list)
     default_choice: Optional[str] = None
     thinking_delimiters: Optional[Mapping[str, str]] = None
 
     @classmethod
-    def from_task_cfg(cls, task_cfg: Mapping[str, Any]) -> "ConstrainedOutputConfig":
-        """Parse constrained output config from task config.
-
-        thinking_delimiters is always read from task level, not from nested config.
-        """
-        raw = task_cfg.get("constrained_output", False)
+    def from_task_cfg(cls, task_cfg: TaskConfig) -> "ConstrainedOutputConfig":
+        """Parse constrained output config from task config."""
+        raw = task_cfg.constrained_output
 
         if isinstance(raw, bool):
             return cls(
                 enabled=raw,
-                choices=task_cfg.get("choices", []),
-                default_choice=task_cfg.get("default_choice"),
-                thinking_delimiters=task_cfg.get("thinking_delimiters"),
+                choices=task_cfg.choices,
+                default_choice=task_cfg.default_choice,
+                thinking_delimiters=task_cfg.thinking_delimiters,
             )
 
         if isinstance(raw, Mapping):
+            task_default = task_cfg.default_choice
             return cls(
                 enabled=raw.get("enabled", False),
-                choices=task_cfg.get("choices", []),
-                default_choice=task_cfg.get("default_choice")
-                or raw.get("default_choice"),
-                thinking_delimiters=task_cfg.get("thinking_delimiters"),
+                choices=task_cfg.choices,
+                default_choice=task_default or raw.get("default_choice"),
+                thinking_delimiters=task_cfg.thinking_delimiters,
             )
 
-        return cls(choices=task_cfg.get("choices", []))
+        return cls(choices=task_cfg.choices)
 
     @property
     def default(self) -> Optional[str]:
@@ -122,19 +119,17 @@ class BaseTaskAdapter(ABC):
     name = "base"
 
     @abstractmethod
-    def build_prompts(self, dataset: Dataset, task_cfg: Mapping[str, Any]) -> List[str]:
+    def build_prompts(self, dataset: Dataset, task_cfg: TaskConfig) -> List[str]:
         """Construct prompts for each dataset row."""
         raise NotImplementedError
 
     @abstractmethod
-    def extract_references(
-        self, dataset: Dataset, task_cfg: Mapping[str, Any]
-    ) -> List[Any]:
+    def extract_references(self, dataset: Dataset, task_cfg: TaskConfig) -> List[Any]:
         """Extract reference targets for metric computation."""
         raise NotImplementedError
 
     def postprocess_predictions(
-        self, predictions: Sequence[str], task_cfg: Mapping[str, Any]
+        self, predictions: Sequence[str], task_cfg: TaskConfig
     ) -> List[Any]:
         """Apply task-specific postprocessing to predictions."""
         return list(predictions)
@@ -163,9 +158,9 @@ class BaseTaskAdapter(ABC):
 
     async def generate_predictions(
         self,
-        model: BaseModel,
+        model: CoreModelInterface,
         prompts: Sequence[str],
-        task_cfg: Mapping[str, Any],
+        task_cfg: TaskConfig,
         batch_size: int,
         batch_cb: Any | None = None,
         **kwargs,
@@ -189,7 +184,7 @@ class BaseTaskAdapter(ABC):
             batch_size=batch_size, batch_cb=batch_cb, **kwargs
         )
         constrained_cfg = ConstrainedOutputConfig.from_task_cfg(task_cfg)
-        task_name = task_cfg.get("name", "unknown")
+        task_name = task_cfg.name
 
         # Validate: constrained output requires non-empty choices
         if constrained_cfg.enabled and not constrained_cfg.choices:
@@ -235,7 +230,7 @@ class BaseTaskAdapter(ABC):
                 batch_cb=gen_config.batch_cb,
                 progress_cb=gen_config.progress_cb,
                 progress_every=gen_config.progress_every,
-                **(gen_config.generation_kwargs or {}),
+                **gen_config.generation_kwargs,
             )
             return predictions, raw_predictions, None
 
@@ -246,7 +241,7 @@ class BaseTaskAdapter(ABC):
             batch_cb=gen_config.batch_cb,
             progress_cb=gen_config.progress_cb,
             progress_every=gen_config.progress_every,
-            **(gen_config.generation_kwargs or {}),
+            **gen_config.generation_kwargs,
         )
         if raw_predictions is None:
             raw_predictions = list(predictions)
@@ -254,7 +249,7 @@ class BaseTaskAdapter(ABC):
 
     async def _generate_two_phase(
         self,
-        model: BaseModel,
+        model: CoreModelInterface,
         prompts: Sequence[str],
         constrained_cfg: ConstrainedOutputConfig,
         gen_config: GenerationConfig,
@@ -279,7 +274,7 @@ class BaseTaskAdapter(ABC):
 
         thinking_prompts = [f"{prompt}\n{thinking_start}" for prompt in prompts]
 
-        thinking_gen_kwargs = dict(gen_config.generation_kwargs or {})
+        thinking_gen_kwargs = dict(gen_config.generation_kwargs)
         existing_stops = thinking_gen_kwargs.get("stop_strings", [])
         if not isinstance(existing_stops, list):
             existing_stops = list(existing_stops)
@@ -306,7 +301,7 @@ class BaseTaskAdapter(ABC):
         answers = await model.generate_constrained(
             answer_prompts,
             pattern,
-            **(gen_config.generation_kwargs or {}),
+            **gen_config.generation_kwargs,
         )
 
         raw_outputs = [
@@ -317,7 +312,7 @@ class BaseTaskAdapter(ABC):
         return answers, raw_outputs, None
 
     def collect_extras(
-        self, task_cfg: Mapping[str, Any], count: int
+        self, task_cfg: TaskConfig, count: int
     ) -> List[Mapping[str, Any]] | None:
         """Return saved per-example metadata if the adapter generates any."""
         _ = (task_cfg, count)
@@ -327,7 +322,7 @@ class BaseTaskAdapter(ABC):
         self,
         predictions: Sequence[Any],
         references: Sequence[Any],
-        task_cfg: Mapping[str, Any],
+        task_cfg: TaskConfig,
     ) -> Tuple[List[Any], List[Any]]:
         """Normalize predictions/references into the format metrics expect."""
         return list(predictions), list(references)
