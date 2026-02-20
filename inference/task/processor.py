@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 import evaluate
 from datasets import Dataset, load_dataset
 
+from inference.config.models import TaskConfig
+
 
 class MetricRegistry:
     """Registry for custom metric functions."""
@@ -116,22 +118,12 @@ class TaskProcessor:
         return template.format_map(values)
 
     @staticmethod
-    def extract_references(
-        dataset: Dataset, task_config: Mapping[str, Any]
-    ) -> List[Any]:
+    def extract_references(dataset: Dataset, task_config: TaskConfig) -> List[Any]:
         """Extract reference labels/targets from dataset rows."""
-        ref_field = task_config.get("reference_field")
+        ref_field = task_config.reference_field
         if isinstance(ref_field, str):
             return [TaskProcessor.resolve_field(row, ref_field) for row in dataset]
-        ref_fields = task_config.get("reference_fields")
-        if isinstance(ref_fields, Sequence) and not isinstance(
-            ref_fields, (str, bytes)
-        ):
-            return [
-                {field: TaskProcessor.resolve_field(row, field) for field in ref_fields}
-                for row in dataset
-            ]
-        raise ValueError("Task must specify reference_field or reference_fields.")
+        raise ValueError("Task must specify reference_field.")
 
     @staticmethod
     def resolve_field(row: Mapping[str, Any], path: str) -> Any:
@@ -210,29 +202,25 @@ class TaskProcessor:
 
     @staticmethod
     def postprocess_predictions(
-        predictions: List[str], task_config: Mapping[str, Any]
+        predictions: List[str], task_config: TaskConfig
     ) -> List[str]:
         """Apply simple string post-processing rules to predictions."""
-        postprocess = task_config.get("prediction_postprocess") or {}
-        thinking_cfg = task_config.get("thinking_delimiters") or {}
-        strip_thinking = bool(thinking_cfg.get("strip_from_prediction"))
+        strip_from_prediction = task_config.strip_from_prediction or {}
+        thinking_cfg = task_config.thinking_delimiters or {}
+        strip_thinking = bool(strip_from_prediction) or bool(
+            thinking_cfg.get("strip_from_prediction")
+        )
 
         processed: List[str] = []
         for pred in predictions:
             text = str(pred)
             if strip_thinking:
                 _, text = TaskProcessor.apply_thinking_delimiters(text, thinking_cfg)
-            after = postprocess.get("after")
-            before = postprocess.get("before")
-            if after and after in text:
-                text = text.split(after)[-1]
-            if before and before in text:
-                text = text.split(before)[0]
             processed.append(text.strip())
 
-        choices = task_config.get("choices")
+        choices = task_config.choices
         if choices:
-            default = task_config.get("default_choice", choices[0])
+            default = task_config.default_choice or choices[0]
             processed = [
                 TaskProcessor.extract_choice(text, choices, default)
                 for text in processed
