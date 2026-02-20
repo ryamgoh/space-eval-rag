@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from inference.config.models import APIModelConfig
+from inference.model.core_model import CoreModelInterface
 
-from inference.model.base_model import BaseModel
 
-
-class APIModel(BaseModel):
+class APIModel(CoreModelInterface):
     """Adapter placeholder for API-backed models."""
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: APIModelConfig):
         """Store API configuration without initializing a client."""
-        name = config["name"]
-        super().__init__(name=name, model_type="api", max_batch_size=config.get("max_batch_size"))
+        super().__init__(
+            name=config.name, model_type="api", max_batch_size=config.max_batch_size
+        )
         self.config = config
 
     async def generate_batch(self, prompts: list[str], **kwargs) -> list[str]:

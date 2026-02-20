@@ -6,70 +6,65 @@ from typing import Any, Dict, List, Optional
 import torch
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
-from inference.model.base_model import BaseModel
+from inference.config.models import HuggingFaceModelConfig
+from inference.model.core_model import CoreModelInterface
 from inference.util.model_paths import resolve_model_path
 
 
-class HuggingFaceModel(BaseModel):
+class HuggingFaceModel(CoreModelInterface):
     """Adapter for Hugging Face Transformers models."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: HuggingFaceModelConfig):
         """Initialize tokenizer/model and cache configuration."""
-        name = config["name"]
         super().__init__(
-            name=name,
+            name=config.name,
             model_type="huggingface",
-            max_batch_size=config.get("max_batch_size"),
+            max_batch_size=config.max_batch_size,
         )
-        model_path = config["model_path"]
-        local_dir = config.get("local_dir")
-        resolved_path, cache_dir = resolve_model_path(model_path, local_dir)
-
-        tokenizer_kwargs = config.get("tokenizer_kwargs", {})
-        model_kwargs = config.get("model_kwargs", {})
-        model_class = config.get("model_class", "causal")
-        trust_remote = config.get("trust_remote_code", False)
-        self.uses_device_map = "device_map" in model_kwargs
+        resolved_path, cache_dir = resolve_model_path(
+            config.model_path, config.local_dir
+        )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             resolved_path,
             cache_dir=cache_dir,
-            trust_remote_code=trust_remote,
-            **tokenizer_kwargs,
+            trust_remote_code=config.trust_remote_code,
+            **config.tokenizer_kwargs,
         )
-        if model_class == "causal":
+        if config.model_class == "causal":
             self.tokenizer.padding_side = "left"
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        self.model_class = model_class
+        self.model_class = config.model_class
         model_cls = (
-            AutoModelForSeq2SeqLM if model_class == "seq2seq" else AutoModelForCausalLM
+            AutoModelForSeq2SeqLM
+            if config.model_class == "seq2seq"
+            else AutoModelForCausalLM
         )
+        self.uses_device_map = "device_map" in config.model_kwargs
         self.model = model_cls.from_pretrained(
             resolved_path,
             cache_dir=cache_dir,
-            trust_remote_code=trust_remote,
-            **model_kwargs,
+            trust_remote_code=config.trust_remote_code,
+            **config.model_kwargs,
         )
-        self.device = config.get("device") or (
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.device = config.device or ("cuda" if torch.cuda.is_available() else "cpu")
         if not self.uses_device_map:
             self.model.to(self.device)
         self.input_device = (
             self.model.device if self.uses_device_map else torch.device(self.device)
         )
         self.model.eval()
-        self.generation_kwargs = config.get("generation_kwargs", {})
+        self.generation_kwargs = config.generation_kwargs
         self._outlines_model = None
         self._outlines_generator = None
 
         # Set thinking model flag from config or auto-detect from model path
-        is_thinking = config.get("is_thinking_model", None)
+        is_thinking = config.is_thinking_model
         if is_thinking is None:
             # Auto-detect from model path
-            model_path_lower = model_path.lower()
+            model_path_lower = config.model_path.lower()
             is_thinking = (
                 "thinking" in model_path_lower or "reasoning" in model_path_lower
             )
