@@ -1,57 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Iterable, List, Optional
 
 import pandas as pd
 
 from inference.analysis import loader, plots
-
-
-@dataclass(frozen=True)
-class AnalysisConfig:
-    enabled: bool
-    timing: str
-    plot_set: str
-    output_dir: Optional[str]
-    image_format: str
-    metrics_include: List[str]
-    metrics_exclude: List[str]
-    compare_runs: List[str]
-
-    @staticmethod
-    def from_config(config: Mapping[str, Any] | None) -> "AnalysisConfig":
-        if not isinstance(config, Mapping):
-            return AnalysisConfig(
-                enabled=False,
-                timing="final",
-                plot_set="core",
-                output_dir=None,
-                image_format="png",
-                metrics_include=[],
-                metrics_exclude=[],
-                compare_runs=[],
-            )
-        return AnalysisConfig(
-            enabled=bool(config.get("enabled", False)),
-            timing=str(config.get("timing", "final")),
-            plot_set=str(config.get("plots", "core")),
-            output_dir=config.get("output_dir"),
-            image_format=str(config.get("image_format", "png")),
-            metrics_include=list(config.get("metrics_include", []) or []),
-            metrics_exclude=list(config.get("metrics_exclude", []) or []),
-            compare_runs=list(config.get("compare_runs", []) or []),
-        )
+from inference.config.models import AnalysisConfig
 
 
 class AnalysisManager:
     """Orchestrate analysis plots for one or more runs."""
 
-    def __init__(self, config: Mapping[str, Any] | None = None):
-        self.config = AnalysisConfig.from_config(config)
+    def __init__(self, config: AnalysisConfig):
+        self.config = config
         self._lock = RLock()
 
     def update_incremental(self, run_dir: Path) -> None:
@@ -72,13 +36,19 @@ class AnalysisManager:
             if self.config.compare_runs:
                 self.compare_runs(self.config.compare_runs)
 
-    def compare_runs(self, run_dirs: Iterable[str], out_dir: Optional[str] = None) -> None:
+    def compare_runs(
+        self, run_dirs: Iterable[str], out_dir: Optional[str] = None
+    ) -> None:
         with self._lock:
             self._compare_runs(run_dirs, out_dir=out_dir)
 
-    def _compare_runs(self, run_dirs: Iterable[str], out_dir: Optional[str] = None) -> None:
+    def _compare_runs(
+        self, run_dirs: Iterable[str], out_dir: Optional[str] = None
+    ) -> None:
         run_paths = [self._resolve_run_dir(path) for path in run_dirs]
-        frames = [loader.load_run_frame(path, prefer_summary=True) for path in run_paths]
+        frames = [
+            loader.load_run_frame(path, prefer_summary=True) for path in run_paths
+        ]
         if not frames:
             return
         df = pd.concat(frames, ignore_index=True)
