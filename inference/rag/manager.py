@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
 
+from inference.config.models import RAGConfig
 from inference.rag.embeddings import HFEmbeddingModel
 from inference.rag.index import FAISSIndex
 
 
 class RAGManager:
     """Retrieval-augmented generation manager using FAISS."""
-    def __init__(self, config: Mapping[str, Any]):
+
+    def __init__(self, config: RAGConfig):
         """Initialize RAG configuration without building an index yet."""
-        self.config = dict(config)
+        self.config = config
         self._embedder: Optional[HFEmbeddingModel] = None
         self._index: Optional[FAISSIndex] = None
 
     def _get_embedder(self) -> HFEmbeddingModel:
         """Lazy-load the embedding model."""
         if self._embedder is None:
-            embed_cfg = self.config.get("embedding_model") or {}
-            self._embedder = HFEmbeddingModel(embed_cfg)
+            if self.config.embedding_model:
+                self._embedder = HFEmbeddingModel(self.config.embedding_model)
         return self._embedder
 
     def build_index(

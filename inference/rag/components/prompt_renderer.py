@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Mapping
 
+from inference.config.models import RAGConfig, TaskConfig
 from inference.task.processor import TaskProcessor
 
 
 class PromptRenderer:
     """Render prompts with retrieved context."""
-    def __init__(self, task_cfg: Mapping[str, Any], rag_cfg: Mapping[str, Any]):
+
+    def __init__(self, task_cfg: TaskConfig, rag_cfg: RAGConfig):
         self._task_cfg = task_cfg
         self._rag_cfg = rag_cfg
 
@@ -21,8 +23,8 @@ class PromptRenderer:
         """Render a prompt and its associated RAG metadata."""
         prompt = TaskProcessor.render_template(
             row,
-            self._task_cfg["prompt_template"],
-            self._task_cfg["input_mappings"],
+            self._task_cfg.prompt_template,
+            self._task_cfg.input_mappings,
             extras={"context": context},
         )
         extra = {

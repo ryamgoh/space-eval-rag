@@ -1,34 +1,41 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Mapping
+from typing import Iterable, List
 
 import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 
+from inference.config.models import EmbeddingModelConfig
 from inference.util.model_paths import resolve_model_path
 
 
 class HFEmbeddingModel:
     """Simple Hugging Face embedding helper."""
-    def __init__(self, config: Mapping[str, Any]):
+
+    def __init__(self, config: EmbeddingModelConfig):
         """Load tokenizer/model for embedding inference."""
-        model_path = config["model_path"]
-        local_dir = config.get("local_dir")
-        resolved_path, cache_dir = resolve_model_path(model_path, local_dir)
-        trust_remote = config.get("trust_remote_code", False)
-        self.max_length = int(config.get("max_length", 256))
-        self.batch_size = int(config.get("batch_size", 32))
-        self.pooling = str(config.get("pooling", "mean")).lower()
-        self.device = config.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
+        resolved_path, cache_dir = resolve_model_path(
+            config.model_path, config.local_dir
+        )
+        self.max_length = config.max_length
+        self.batch_size = config.batch_size
+        self.pooling = config.pooling.lower()
+        self.device = config.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            resolved_path, cache_dir=cache_dir, trust_remote_code=trust_remote
+            resolved_path,
+            cache_dir=cache_dir,
+            trust_remote_code=config.trust_remote_code,
         )
         if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token or self.tokenizer.unk_token
+            self.tokenizer.pad_token = (
+                self.tokenizer.eos_token or self.tokenizer.unk_token
+            )
         self.model = AutoModel.from_pretrained(
-            resolved_path, cache_dir=cache_dir, trust_remote_code=trust_remote
+            resolved_path,
+            cache_dir=cache_dir,
+            trust_remote_code=config.trust_remote_code,
         )
         self.model.to(self.device)
         self.model.eval()
@@ -57,7 +64,12 @@ class HFEmbeddingModel:
                 pooled = hidden_state[:, 0]
             else:
                 # Mean pooling over non-padding tokens.
-                mask = encoded["attention_mask"].unsqueeze(-1).expand(hidden_state.size()).float()
+                mask = (
+                    encoded["attention_mask"]
+                    .unsqueeze(-1)
+                    .expand(hidden_state.size())
+                    .float()
+                )
                 summed = (hidden_state * mask).sum(dim=1)
                 counts = mask.sum(dim=1).clamp(min=1e-9)
                 pooled = summed / counts
